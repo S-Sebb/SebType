@@ -53,7 +53,8 @@ tools/chinese-lm/prepare.sh RUN_DIR                     # readings, dev sets, co
 python tools/chinese-lm/train.py RUN_DIR tools/chinese-lm/config.json   # one GPU; a checkpoint every save_every steps
 tools/chinese-lm/select.sh RUN_DIR NAME                 # the best checkpoint on the dev sets, and its export's parity
 cp RUN_DIR/select/NAME/BEST.gguf engines/sebtype-lm/chinese.gguf
-android/test/chinese-lm/run.sh                          # from nobara-pc: the harness, and the bar against baseline.json
+android/test/chinese-lm/run.sh                          # from nobara-pc: the harness, and the bar against the
+                                                        # default branch's model run beside it
 ```
 
 A pilot leaves one chat source out (`pack.py RUN_DIR train 0 -SOURCE`, then a short training run on the

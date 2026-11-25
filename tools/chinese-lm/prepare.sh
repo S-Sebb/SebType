@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The data steps after fetch.sh, in order: pypinyin's corrected readings (common.py readings), the dev sets
 # (android/test/chinese-lm/make_sets.py --dev, in RUN_DIR/dev), the corpus, which leaves them and the test sets
-# out (overlap.py checks it), the tokenizer and the packed tokens.
+# out (overlap.py checks it), the dev slips (data/rime/bench/make-slips.py --dev), the tokenizer and the packed tokens.
 #
 #   tools/chinese-lm/prepare.sh RUN_DIR [TRAIN_SEEDS...]     (default seeds: 0 1 2, what config.json trains on)
 #
@@ -34,6 +34,10 @@ step "$run/dev/dev-typo.tsv" $harness/make_sets.py common.py "$d/readings.tsv.st
   $py $harness/make_sets.py "$d/src" "$d/readings.tsv" "$run/dev" --dev
 corpus() { $py corpus.py "$run" && $py overlap.py "$run"; }
 step "$d/corpus/wikipedia.txt" corpus.py overlap.py common.py $harness/sets "$run/dev/dev-typo.tsv.stamp" "$d/src" -- corpus
+# Slips (#478) of other phrases than the test set's, so the checkpoint choice sees them (#557): everyday
+# phrases, which the corpus keeps (made after it).
+step "$run/dev/dev-slips.tsv" ../../data/rime/bench/make-slips.py -- \
+  $py ../../data/rime/bench/make-slips.py --dev "$run/dev"
 step "$d/tokenizer.model" tokenizer.py "$d/corpus/wikipedia.txt.stamp" -- $py tokenizer.py "$run"
 packed=(pack.py common.py "$d/tokenizer.model.stamp" "$d/corpus/wikipedia.txt.stamp")
 step "$d/dev.0.bin" "${packed[@]}" -- $py pack.py "$run" dev 0

@@ -5,8 +5,8 @@
 Writes RUN_DIR/data/SPLIT.SEED.bin (uint16 token ids, each segment as <s> text </s>) and SPLIT.SEED.wb (one
 byte per token: 1 when a word ends at that token, 0 when it doesn't, 2 when it doesn't count); a pilot's names
 end in -without-SOURCE. The corpus files are mixed by passes over each: Wikipedia's BASE samples it, Wikinews
-takes BASE's passes, and each chat source SHARE of the training characters (#557's mix). Each pass draws its
-own examples.
+takes BASE's passes, and each chat source SHARE of the training characters (#557's mix), but no more than
+MAX_PASSES over it. Each pass draws its own examples.
 
 A pinyin example sits in the text in front of a span of words: <T>, the letters typed for the span, <S>, the
 span's characters, <E>, then the text goes on. About one span per EVERY characters starts one, at a word
@@ -52,6 +52,11 @@ SHARE = {
     "kdconv": 0.01,
     "oasst2": 0.005,
 }
+# A chat source is read at most this often per pack, its share falling short: a run reads its 3 packs about 1.6
+# times, so about 7 times in all. #557's r3 read the meetings 47 times and Tatoeba 37: their dev loss rose from
+# step 1500 (3.8 to 7.1 nats per character for the meetings, above a model's that never read them), and with it
+# the slips and news sets fell. HundredCV, read 12 times, didn't rise.
+MAX_PASSES = 1.5
 EVERY = 30
 MAX_SPAN = 25
 MAX_LETTERS = 64  # zh_lm.h's
@@ -201,7 +206,8 @@ def work(job):
 
 
 def passes(corpus, split, without):
-    """Passes over each corpus file: BASE's, and for each chat source its SHARE of all the characters."""
+    """Passes over each corpus file: BASE's, and for each chat source its SHARE of all the characters, at most
+    MAX_PASSES."""
     if split == "dev":
         return {n: 1 for n in [*BASE, *SHARE]}
     chars = {
@@ -210,7 +216,10 @@ def passes(corpus, split, without):
     }
     share = {n: s for n, s in SHARE.items() if n not in without}
     total = sum(BASE[n] * chars[n] for n in BASE) / (1 - sum(share.values()))
-    out = dict(BASE) | {n: s * total / chars[n] for n, s in share.items()}
+    out = dict(BASE) | {
+        n: min(MAX_PASSES, s * total / chars[n]) for n, s in share.items()
+    }
+    total = sum(p * chars[n] for n, p in out.items())
     for n, p in out.items():
         print(
             f"{n}: {chars[n] / 1e6:.1f}M characters, {p:.2f} passes, {100 * p * chars[n] / total:.1f} %"

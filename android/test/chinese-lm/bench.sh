@@ -8,7 +8,8 @@
 #   [CHINESE_CORE=1] android/test/chinese-lm/bench.sh RUN_NAME [MODEL.gguf [NAME=VALUE...] [-- NAME=VALUE...]]
 #                                    NAME=VALUE: zhbench's options; after --, those a third stack ("gen", the
 #                                    model with its own candidates) adds to them. CHINESE_CORE=1 adds the
-#                                    keyboard's own code ("core", zhbench's core=1), with the model.
+#                                    keyboard's own code ("core", zhbench's core=1), with the model;
+#                                    CHINESE_REF=REF.gguf with it, that code with REF too ("ref": run.sh's bar).
 #   [CHINESE_CORE=1] android/test/chinese-lm/bench.sh --dev DEV_DIR OUT_DIR MODEL.gguf [NAME=VALUE...]  only
 #                                    the model (and the keyboard's own code), on the dev sets in DEV_DIR (tune.py,
 #                                    tools/chinese-lm/select.sh), with score.py's OUT_DIR/summary.json
@@ -46,7 +47,7 @@ RUN rpm -e --nodeps \$(rpm -qa 'librime*') && dnf -y --setopt=throttle=35M insta
   # llama.cpp (MIT) is fetched at its pinned commit out here, before the build lock.
   llama=$(engines/sebtype-lm/fetch-llama.sh)
   # Only the results' paths go to stdout: each set's, which score.py --compare reads, and the summary's last.
-  build_lock 120 chinese-harness "${container[@]}" env CHINESE_IN_CONTAINER=1 ISSUE="${ISSUE:-}" LLAMA_DIR="$llama" CHINESE_CORE="${CHINESE_CORE:-}" \
+  build_lock 120 chinese-harness "${container[@]}" env CHINESE_IN_CONTAINER=1 ISSUE="${ISSUE:-}" LLAMA_DIR="$llama" CHINESE_CORE="${CHINESE_CORE:-}" CHINESE_REF="${CHINESE_REF:-}" \
     $here/bench.sh "$@" >&2
   [[ $1 == --dev ]] && exit
   printf '%s\n' "$TASK_OUT/chinese/$1"/*.tsv "$TASK_OUT/chinese/$1/summary.json"
@@ -85,16 +86,19 @@ stacks=(rime)
 [[ $model ]] && stacks+=(model)
 ((${#gen[@]})) && stacks+=(gen)
 [[ $model && ${CHINESE_CORE:-} ]] && stacks+=(core)
+[[ $model && ${CHINESE_CORE:-} && ${CHINESE_REF:-} ]] && stacks+=(ref)
 [[ $dev ]] && stacks=(model ${CHINESE_CORE:+core})
 jobs=()
-for stack in "${stacks[@]}"; do
-  for set in "${sets[@]}"; do
+# Set by set, the stacks taking turns, so the stacks' latencies are measured under the same load.
+for set in "${sets[@]}"; do
+  for stack in "${stacks[@]}"; do
     [[ $set == *wikinews-articles.tsv ]] && continue
     name=$(basename "$set" .tsv)
     args=("$work/shared" "$work/user-$stack-$name" "$set" "$out/$stack.$name.tsv")
     [[ $stack == model ]] && args+=("$model" "${options[@]}")
     [[ $stack == gen ]] && args+=("$model" "${options[@]}" "${gen[@]}")
     [[ $stack == core ]] && args+=("$model" core=1 "${options[@]}")
+    [[ $stack == ref ]] && args+=("$CHINESE_REF" core=1 "${options[@]}")
     jobs+=("cp -r $work/user $work/user-$stack-$name && $build/zhbench ${args[*]}")
   done
 done

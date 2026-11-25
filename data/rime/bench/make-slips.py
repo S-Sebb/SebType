@@ -4,6 +4,9 @@ correction puts the intended phrase first or on page 1.
   python3 -I make-slips.py SETS_DIR [HARNESS_SETS_DIR]
       writes slips.tsv (keys, phrase, kind) into SETS_DIR, and the same items in the Chinese harness's
       form (context, keys, phrase, kind; android/test/chinese-lm/sets) into HARNESS_SETS_DIR
+  python3 -I make-slips.py --dev DEV_DIR
+      writes dev-slips.tsv, in the harness's form, from DEV_PHRASES: other phrases of the same kinds, for the
+      Chinese model's checkpoint choice (tools/chinese-lm/select.sh), which must not see the test set's (#557)
 
 Each phrase gets one slip of each kind, at a seeded random letter: drop (a letter missing), double (a
 letter typed twice), swap (two letters swapped) and near (a neighbouring key on a PC's ANSI keyboard,
@@ -65,6 +68,51 @@ PHRASES = """
 简单 jian dan
 """
 
+DEV_PHRASES = """
+越来越近 yue lai yue jin
+越来越冷 yue lai yue leng
+越多越好 yue duo yue hao
+越说越乱 yue shuo yue luan
+越看越喜欢 yue kan yue xi huan
+一听就懂 yi ting jiu dong
+一看就知道 yi kan jiu zhi dao
+一用就坏 yi yong jiu huai
+又便宜又好 you pian yi you hao
+一边吃一边说 yi bian chi yi bian shuo
+七上八下 qi shang ba xia
+一路平安 yi lu ping an
+津津有味 jin jin you wei
+恍然大悟 huang ran da wu
+不可思议 bu ke si yi
+马马虎虎 ma ma hu hu
+一言为定 yi yan wei ding
+半信半疑 ban xin ban yi
+千方百计 qian fang bai ji
+自由自在 zi you zi zai
+无所谓 wu suo wei
+来不及 lai bu ji
+差不多 cha bu duo
+没问题 mei wen ti
+谢谢你 xie xie ni
+对不起 dui bu qi
+你说什么 ni shuo shen me
+我们走吧 wo men zou ba
+明天再说 ming tian zai shuo
+你吃饭了吗 ni chi fan le ma
+我马上到 wo ma shang dao
+等一下 deng yi xia
+真的吗 zhen de ma
+太好了 tai hao le
+电话 dian hua
+东西 dong xi
+地方 di fang
+衣服 yi fu
+医院 yi yuan
+周末 zhou mo
+晚上 wan shang
+开心 kai xin
+"""
+
 REPORTED = [("yuelaiyuxiao", "越来越小", "reported")]  # #478
 
 ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
@@ -99,13 +147,18 @@ def slip(rng, keys, kind):
 
 
 def main():
-    rng = random.Random(478)
-    out = list(REPORTED)
-    for line in PHRASES.strip().split("\n"):
+    dev = sys.argv[1] == "--dev"
+    rng = random.Random(4780 if dev else 478)
+    out = [] if dev else list(REPORTED)
+    for line in (DEV_PHRASES if dev else PHRASES).strip().split("\n"):
         text, *syllables = line.split()
         keys = "".join(syllables)
         for kind in ("drop", "double", "swap", "near"):
             out.append((slip(rng, keys, kind), text, kind))
+    if dev:
+        with open(f"{sys.argv[2]}/dev-slips.tsv", "w", encoding="utf-8") as f:
+            f.writelines("\t" + "\t".join(item) + "\n" for item in out)
+        return
     with open(f"{sys.argv[1]}/slips.tsv", "w", encoding="utf-8") as f:
         f.writelines("\t".join(item) + "\n" for item in out)
     if sys.argv[2:]:

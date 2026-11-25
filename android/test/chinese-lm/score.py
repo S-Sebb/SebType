@@ -5,8 +5,8 @@ score.py OUT_DIR [SETS_DIR]      summary.json of one run (bench.sh's STACK.SET.t
 score.py --compare RUN1 RUN2     exit 1 unless every item's results are equal and per-key p50 and p95 within 25 %
 score.py --table RUN1 RUN2       the report's table: run 1, with run 2's latency in brackets
 score.py --profile OUT_DIR       where a key's time goes, per stack (zhbench's profile=1 .prof files)
-score.py --bar SUMMARY BASELINE  exit 1 unless the keyboard's 中文 (the core stack) passes the quality bar against
-                                 BASELINE (baseline.json: the shipped model's core stack on these sets, #557)
+score.py --bar SUMMARY           exit 1 unless the keyboard's 中文 with the model tried (the core stack) passes the
+                                 quality bar against it with the reference model (the ref stack, same run; #557)
 """
 
 import difflib
@@ -21,6 +21,7 @@ STACKS = {
     "model": "Rime, re-ranked by SebType's Chinese model",
     "gen": "… and the model's own candidates",
     "core": "SebType's 中文: the model around Rime in core/ (#264)",
+    "ref": "… with the reference model (the default branch's)",
 }
 
 
@@ -275,9 +276,12 @@ def table(a, b):
     print("\n".join([head, "|---|" + "---|" * len(stacks)] + rows))
 
 
-# The bar (#557): the keyboard's 中文 against the shipped model's on the same sets (baseline.json), so a worse
+# The bar (#557): the keyboard's 中文 against the same code with the reference model, in the same run, so a worse
 # model fails. A set's first and top 3 may be at most BAR_POINTS lower (a few items: a retrain moves some either
-# way), and the latency's p95 at most BAR_TIME above, as load varies it between runs (compare()'s 25 %).
+# way), and the latency's p95 at most BAR_TIME above. The reference's latency is measured beside the model's,
+# their jobs taking turns: the machine's load moved the same model's next-word p95 from 13.2 to 16.9 ms between
+# runs, which a stored number can't tell from a slower model (#557's r3 "rose" to 20.4 ms; run again just after
+# the shipped model, it took 14.3 ms to its 16.9).
 BAR_POINTS, BAR_TIME = 2.0, 1.25
 BAR_SETS = [
     "sent-chat",
@@ -288,21 +292,25 @@ BAR_SETS = [
     "abbr-news",
     "partial-chat",
     "partial-news",
+    "long-typo-chat",
+    "long-typo-news",
+    "fuzzy-chat",
+    "fuzzy-news",
     "typo",
     "slips",
     "variants",
 ]
 
 
-def bar(path, baseline_path):
-    ours = json.loads(Path(path).read_text())["core"]
-    base = json.loads(Path(baseline_path).read_text())["core"]
+def bar(path):
+    summary = json.loads(Path(path).read_text())
+    ours, base = summary["core"], summary["ref"]
     checks = []
     for name in BAR_SETS:
         for k in ("top1", "top3"):
             checks.append(
                 (
-                    f"{name} {k} >= baseline - {BAR_POINTS}",
+                    f"{name} {k} >= reference - {BAR_POINTS}",
                     ours[name][k],
                     base[name][k] - BAR_POINTS,
                     1,
@@ -311,7 +319,7 @@ def bar(path, baseline_path):
     for name in ("next-chat", "next-news"):
         checks.append(
             (
-                f"{name} top3 >= baseline - {BAR_POINTS}",
+                f"{name} top3 >= reference - {BAR_POINTS}",
                 ours[name]["top3"],
                 base[name]["top3"] - BAR_POINTS,
                 1,
@@ -320,7 +328,7 @@ def bar(path, baseline_path):
     for k in ("key_ms", "next_ms"):
         checks.append(
             (
-                f"{k} p95 <= baseline x {BAR_TIME}",
+                f"{k} p95 <= reference x {BAR_TIME}",
                 ours[k][1],
                 round(base[k][1] * BAR_TIME, 2),
                 -1,
@@ -366,6 +374,6 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--profile":
         profile(sys.argv[2])
     elif sys.argv[1] == "--bar":
-        sys.exit(0 if bar(*sys.argv[2:4]) else 1)
+        sys.exit(0 if bar(sys.argv[2]) else 1)
     else:
         print(json.dumps(summarise(*sys.argv[1:3]), ensure_ascii=False, indent=1))
