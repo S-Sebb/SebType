@@ -2,6 +2,7 @@
 // itself, and the tray item with SebType's menu. MIT, SebType.
 #pragma once
 
+#include <fcitx-utils/dbus/bus.h>
 #include <fcitx-utils/dbus/objectvtable.h>
 #include <fcitx-utils/event.h>
 #include <fcitx/addonfactory.h>
@@ -99,6 +100,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   std::unique_ptr<fcitx::EventSourceTime> poll_;
   std::unique_ptr<fcitx::EventSourceTime> hide_;
   std::unique_ptr<fcitx::EventSourceTime> chores_;
+  std::unique_ptr<fcitx::dbus::Slot> refreshWatch_;  // fcitx5-rime installed since Fcitx5 started stays off (#542)
+  std::unique_ptr<fcitx::EventSource> refresh_;
 };
 
 }  // namespace sebtype

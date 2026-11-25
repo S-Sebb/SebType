@@ -92,6 +92,11 @@ export global State {
     in property <string> update-installed;
     in property <string> update-checked;        // when the last check went through
     in property <string> update-error;          // why the check or the install failed
+    in property <string> rime-groups;           // the Fcitx5 groups where Rime won't type Chinese (#542)
+    in property <int> rime-count;               // and how many; 0 with why they couldn't be read in rime-groups
+    in property <bool> rime-busy;               // Use SebType runs
+    in property <string> rime-error;            // and what of it failed
+    callback use-sebtype-for-rime();            // SebType's input method in their place, as setup's wizard does
     in property <[UpdateNote]> update-notes;    // parsed release notes for update-version (#428)
 
     // What the last change did, shown for a moment (main.rs's toast); app.slint words it.

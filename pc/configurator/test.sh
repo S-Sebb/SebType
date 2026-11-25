@@ -113,6 +113,71 @@ PY
 }
 sandbox
 
+# A made-up Fcitx5 for the Rime row (#542): groups "Rime" and "Work" have fcitx5-rime's Rime beside "Default"
+# with SebType. It knows keyboard-us, sebtype and rime (a real Fcitx5 drops others from its groups); Work's first
+# write fails. With FAKE_FCITX5_PROFILE it saves its groups there as Fcitx5 does: at its start, at Save and at
+# each write. FAKE_FCITX5_MODE: no-sebtype (doesn't know SebType's yet), list-fails or group-fails (Work).
+cat > "$sb/fake-fcitx5.py" <<'PY'
+import os, dbus, dbus.service, dbus.mainloop.glib
+from gi.repository import GLib
+groups = {"Default": ("us", [("keyboard-us", ""), ("sebtype", "")]), "Rime": ("us", [("keyboard-us", ""), ("rime", "")]),
+          "Work": ("us", [("rime", "")])}
+mode, path, failed = os.environ.get("FAKE_FCITX5_MODE", ""), os.environ.get("FAKE_FCITX5_PROFILE"), set()
+C = "org.fcitx.Fcitx.Controller1"
+def save():
+    if not path: return
+    out = []
+    for i, (g, (layout, ims)) in enumerate(groups.items()):
+        out += [f"[Groups/{i}]", f"Name={g}", f"Default Layout={layout}", f"DefaultIM={ims[0][0]}", ""]
+        out += [line for j, (im, l) in enumerate(ims) for line in (f"[Groups/{i}/Items/{j}]", f"Name={im}", f"Layout={l}", "")]
+    out += ["[GroupOrder]"] + [f"{i}={g}" for i, g in enumerate(groups)]
+    open(path, "w").write("\n".join(out) + "\n")
+def fail(what): raise dbus.exceptions.DBusException(f"made-up failure: {what}")
+class Controller(dbus.service.Object):
+    @dbus.service.method(C, out_signature="s")
+    def CurrentInputMethod(self): return "keyboard-us"
+    @dbus.service.method(C, out_signature="a(ssssssb)")
+    def AvailableInputMethods(self):
+        known = ("keyboard-us", "rime") if mode == "no-sebtype" else ("keyboard-us", "sebtype", "rime")
+        return [(n, n, n, "", n, "", False) for n in known]
+    @dbus.service.method(C, out_signature="as")
+    def InputMethodGroups(self): return list(groups) if mode != "list-fails" else fail("InputMethodGroups")
+    @dbus.service.method(C, in_signature="s", out_signature="sa(ss)")
+    def InputMethodGroupInfo(self, g): return groups[g] if (mode, g) != ("group-fails", "Work") else fail(g)
+    @dbus.service.method(C, in_signature="ssa(ss)")
+    def SetInputMethodGroupInfo(self, g, layout, ims):
+        if g == "Work" and g not in failed: failed.add(g); fail(g)
+        groups[g] = (layout, [(str(i), str(l)) for i, l in ims]); save()
+    @dbus.service.method(C)
+    def Save(self): save()
+dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+save()
+name = dbus.service.BusName("org.fcitx.Fcitx5", dbus.SessionBus())
+Controller(dbus.SessionBus(), "/controller")
+GLib.MainLoop().run()
+PY
+
+# Use SebType on that Rime row (#542), in an account of its own for each of the fake's modes: its groups get
+# SebType first, without Rime, after a backup of the profile; none changes when they can't all be read.
+# shellcheck disable=SC2016  # the inner script gets its paths as arguments
+rime_button() {
+  local mode d rc=0 test
+  for mode in "" no-sebtype list-fails group-fails; do
+    d=$sb/rime-button-${mode:-ok} test=private_fake_fcitx5_unread_groups_change_nothing
+    [[ -z $mode ]] && test=private_fake_fcitx5_puts_sebtype_first_in_rime_groups
+    mkdir -p "$d/config/fcitx5"
+    private_dbus "$d" -i PATH="$PATH" HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" \
+      FAKE_FCITX5_MODE="$mode" FAKE_FCITX5_PROFILE="$d/config/fcitx5/profile" -- bash -c '
+      python3 "$1" & f=$!
+      for _ in $(seq 50); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.2; done
+      "$2" --ignored --exact "linux::tests::$3"
+      rc=$?; kill $f; exit $rc' _ "$sb/fake-fcitx5.py" "$tests" "$test" || { echo "FAIL: mode ${mode:-ok}"; rc=1; }
+  done
+  return $rc
+}
+export -f rime_button; export sb tests
+check rime-button 120 rime_button
+
 # Every screen opens and stays open in each language, set as the system's; the screenshots are kept for
 # the eye, and a 中文 or 日本語 screen that looks the same as the English one fails.
 shots() {
@@ -126,11 +191,20 @@ unset LC_ALL LC_MESSAGES
 for lang in en_US zh_CN ja_JP; do
   for spec in "$@"; do
     name=${lang%_*}-${spec%%:*}; read -ra a <<<"${spec#*:}"
+    # The Ready page and About with Rime in groups of the person's (#542): a made-up Fcitx5 answers for those
+    # shots; for *-rime-error, it can't read a group.
+    fake=; [[ ${spec%%:*} == *-rime* ]] && {
+      # The Fcitx5 an earlier screen's call started on this bus goes first.
+      busctl --user --auto-start=no call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Exit 2>/dev/null; sleep 1
+      mode=; [[ ${spec%%:*} == *-error ]] && mode=group-fails
+      FAKE_FCITX5_MODE=$mode python3 "${0%/*}/fake-fcitx5.py" & fake=$!; sleep 1
+    }
     LANGUAGE=$lang LANG=$lang.UTF-8 "$bin" "${a[@]}" & pid=$!
     sleep 3
     kill -0 $pid 2>/dev/null || { echo "$name: the app exited"; exit 1; }
     spectacle -b -n -a -o "$d/$name.png" 2>/dev/null
     kill $pid; wait $pid 2>/dev/null
+    [[ -n $fake ]] && { kill $fake; wait $fake 2>/dev/null; }
     [[ -s $d/$name.png ]] || { echo "$name: no screenshot"; exit 1; }
     # SebType's own title bar on Wayland (#439): no KWin frame, the window edged in the Picnic outline, or
     # the System style's grey one (the setup wizard's, #471).
@@ -159,11 +233,13 @@ SH
   notes="### New$(printf '\\n- **Change %s.** Something SebType does better now.' $(seq 12))"
   printf '{"auto": true, "checked": %s, "latest": "99.0.0", "notified": "", "notes": "%s"}\n' "$(date +%s)" "$notes" > "$sb/data/sebtype/update.json"
   # The wizard's last page (#445) with a global IM module to turn off, in the sandbox's own profile, and no
-  # Fcitx5 on the private bus: its two steps left, each with its button.
+  # Fcitx5 on the private bus: its two steps left, each with its button; setupready-rime with the made-up
+  # Fcitx5 above, whose groups "Rime" and "Work" have Rime, a third; setupready-rime-error with Work unread;
+  # about-rime with it, without an update.
   echo 'export GTK_IM_MODULE=fcitx' > "$sb/.profile"
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --no-lockscreen --socket "wl$$" --width 1000 --height 700 --exit-with-session \
-    "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3' 'setup:--setup $sb/no-installer' 'setupcommon:--setup $sb/no-installer --step 2' 'setupcommon-system:--setup $sb/no-installer --step 2 --theme system' 'setupsync:--setup $sb/no-installer --step 3' 'setupsync-system:--setup $sb/no-installer --step 3 --theme system' 'setupready:--setup $sb/no-installer --step 4' 'setupready-system:--setup $sb/no-installer --step 4 --theme system'" > "$sb/kwin.log" 2>&1
+    "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3' 'setup:--setup $sb/no-installer' 'setupcommon:--setup $sb/no-installer --step 2' 'setupcommon-system:--setup $sb/no-installer --step 2 --theme system' 'setupsync:--setup $sb/no-installer --step 3' 'setupsync-system:--setup $sb/no-installer --step 3 --theme system' 'setupready:--setup $sb/no-installer --step 4' 'setupready-system:--setup $sb/no-installer --step 4 --theme system' 'setupready-rime:--setup $sb/no-installer --step 4' 'setupready-rime-error:--setup $sb/no-installer --step 4' 'about-rime:--page 5'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
 export -f shots; export out sb

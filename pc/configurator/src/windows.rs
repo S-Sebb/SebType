@@ -576,6 +576,14 @@ pub fn update_error() -> Option<String> {
     Some(e)
 }
 
+/// Linux's Fcitx5 groups with fcitx5-rime's Rime (#542): none on Windows.
+pub fn rime_group_names() -> Result<Option<Vec<String>>, String> {
+    Ok(None)
+}
+pub fn use_sebtype_for_rime() -> io::Result<()> {
+    Ok(())
+}
+
 pub fn open_url(url: &str) {
     let _ = Command::new("rundll32")
         .args(["url.dll,FileProtocolHandler", url])

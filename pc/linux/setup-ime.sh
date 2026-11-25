@@ -118,8 +118,13 @@ restart_later() {
   busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && restart_for+=("$1")
   return 0
 }
+# fcitx5-rime's entry as setup up to 0.2.0 named it 中文 (step 12 removes it now, #542).
+old_rime_im=$'[InputMethod]\nName=中文\nIcon=fcitx-rime\nLabel=中文\nLangCode=zh\nAddon=rime\nConfigurable=True'
 if ((undo_names)); then
-  for f in "$im_dir"/{rime,mozc,keyboard-us}.conf; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; changes=1; }; done
+  for f in "$im_dir"/{mozc,keyboard-us}.conf; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; changes=1; }; done
+  # A rime.conf of the person's own stays.
+  f=$im_dir/rime.conf
+  [[ $(cat "$f" 2>/dev/null) == "$old_rime_im" ]] && { echo "change: remove $f (backup in $backup)"; save "$f"; rm "$f"; changes=1; }
   if grep -q '^  schema/name: ".中文"' "$rime_custom" 2>/dev/null; then
     echo "change: drop the 中文 schema name from $rime_custom"
     sed -i '/^  schema\/name: ".中文"/d' "$rime_custom"; changes=1
@@ -211,8 +216,8 @@ fi
 # SebType's source by linux/build.sh (about an hour the first time, in a container). Built from this checkout,
 # not taken from a release (#421): a tree under test must run its own code. Run from the RPM, setup comes
 # with the release's package, which the release's install or update installed.
-sebtype_now=$(installed sebtype) sebtype_want=$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE
-if ((checkout)) && [[ $sebtype_now != "$sebtype_want" ]] &&
+sebtype_now=$(installed sebtype) sebtype_want=$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE sebtype_coming=0
+if ((checkout)) && [[ $sebtype_now != "$sebtype_want" ]] && { ((!dry)) || sebtype_coming=1; } &&
   change "install SebType's input method $sebtype_want, which hosts Rime and Mozc (asks before using sudo)"; then
   read -rp "Build SebType's input method if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
   if [[ $answer == [yY]* ]]; then
@@ -494,23 +499,60 @@ if ((!dry)) && kwin_runs_fcitx; then
   fi
 fi
 
+# The running Fcitx5's controller.
+call() { busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 "$@"; }
+# The running Fcitx5's groups in order, one a line: name, layout, then its input methods, each field ended by
+# \x1f (a layout may be empty). Read as JSON: busctl's plain output escapes non-ASCII (a zh Fcitx5's 默认) and
+# keeps a name's spaces and quotes, which no split survives. $1: only the first $1 groups. Fails, printing no
+# more, when a group can't be read (gone since the list, or a failed call), never a line of two groups.
+running_groups() {
+  local g info
+  call --json=short InputMethodGroups |
+    python3 -c 'import json, sys; print(*json.load(sys.stdin)["data"][0][:int(sys.argv[1] or 0) or None], sep="\n")' "${1-}" |
+    while IFS= read -r g; do
+      info=$(call --json=short InputMethodGroupInfo s "$g" | python3 -c 'import json, sys
+layout, ims = json.load(sys.stdin)["data"]
+print(*(f + "\x1f" for f in [layout, *(im for im, _ in ims)]), sep="")') || exit 1
+      printf '%s\x1f%s\n' "$g" "$info"
+    done
+}
+# Prints the number and name ("<n><TAB><name>") of each Fcitx5 group with fcitx5-rime's rime: the running
+# Fcitx5's groups when it knows SebType's input method (step 7 changes those), else the profile's.
+rime_groups() {
+  if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
+    local groups
+    groups=$(running_groups) || return 1  # none rather than a part
+    awk -F '\x1f' '{ for (i = 3; i < NF; i++) if ($i == "rime") { print NR - 1 "\t" $1; next } }' <<<"$groups"
+  else
+    awk '/^\[Groups\/[0-9]+\]$/ { g = $0; gsub(/[^0-9]/, "", g); sec = "group"; next }
+      /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ { sec = "item"; next } /^\[/ { sec = ""; next }
+      sec == "group" && sub(/^Name=/, "") { name[g] = $0 } sec == "item" && $0 == "Name=rime" { rime[g] = 1 }
+      END { for (g in rime) print g "\t" name[g] }' "$fcitx_profile" 2>/dev/null | sort -n
+  fi
+}
 # 7. Input methods: SebType's one input method, which switches English, Chinese and Japanese itself (#190),
 # first in the first Fcitx5 group, in place of keyboard-us, rime and mozc; any others stay. When Fcitx5 is
 # running and knows sebtype, update it live over D-Bus and activate sebtype immediately; otherwise update
 # ~/.config/fcitx5/profile directly so Fcitx5 loads sebtype the next time it starts (#442).
 fcitx_profile=$config/fcitx5/profile
-if fcitx_on_dbus && busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
-  call() { busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 "$@"; }
-  group=$(call InputMethodGroups | awk '{print $3}' | tr -d '"')
-  # Quoted strings of the reply: <layout> then <im> <im layout> pairs.
-  mapfile -t q < <(call InputMethodGroupInfo s "$group" | grep -o '"[^"]*"' | tr -d '"')
-  layout=${q[0]} now=() ims=(sebtype)
-  for ((i = 1; i < ${#q[@]}; i += 2)); do
-    now+=("${q[i]}")
-    [[ " sebtype keyboard-us rime mozc " == *" ${q[i]} "* ]] || ims+=("${q[i]}")
+# Rime in the first group, which SebType takes the place of: said on a line of its own after the change.
+# fcitx5-rime's Rime stays off while SebType's input method is installed (linux/src/sebtype.cpp, #542), and stays out of the group after.
+# The way back after removing SebType: pc/linux/README.md, Removing SebType (not installed with the RPM).
+removing=https://github.com/S-Sebb/SebType/blob/main/pc/linux/README.md#removing-sebtype
+first_rime=; [[ $(rime_groups | cut -f1) == 0* ]] &&
+  first_rime=$'\n'"  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back"
+restore=" or restore profile from $backup, with Fcitx5 stopped"  # after first_rime, where a backup is made
+if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
+  first_group=$(running_groups 1)  # a failed read stops setup, as a failed call does
+  IFS=$'\x1f' read -r -a q <<<"$first_group"
+  group=${q[0]} layout=${q[1]} now=("${q[@]:2}") ims=(sebtype)
+  for im in "${now[@]}"; do
+    [[ " sebtype keyboard-us rime mozc " == *" $im "* ]] || ims+=("$im")
   done
   if [[ "${now[*]}" != "${ims[*]}" ]]; then
-    if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc"; then
+    if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc (backup of $fcitx_profile in $backup)$first_rime${first_rime:+$restore as $removing says}"; then
+      call Save  # the running groups, on disk for the backup
+      [[ -f $fcitx_profile ]] && save "$fcitx_profile"
       args=()
       for im in "${ims[@]}"; do args+=("$im" ""); done
       call SetInputMethodGroupInfo 'ssa(ss)' "$group" "$layout" $((${#args[@]} / 2)) "${args[@]}"
@@ -523,13 +565,32 @@ if fcitx_on_dbus && busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fc
 else
   src=$fcitx_profile; [[ -f $src ]] || src=/dev/null
   want=$(fcitx_profile_update "$src")
+  backed=; [[ -f $fcitx_profile ]] && backed=" (backup in $backup)" && first_rime+=${first_rime:+$restore}
+  first_rime+=${first_rime:+ as $removing says}
   if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
-    change "set SebType as the input method in $fcitx_profile (backup in $backup)"; then
+    change "set SebType as the input method in $fcitx_profile$backed$first_rime"; then
     [[ -f $fcitx_profile ]] && save "$fcitx_profile"
     mkdir -p "${fcitx_profile%/*}"; printf '%s\n' "$want" > "$fcitx_profile"
   fi
   if fcitx_on_dbus; then
     warn "Fcitx5 doesn't know SebType's input method yet: $(restart_note "SebType input method")"
+  fi
+fi
+# 7b. Rime in the user's other groups won't type Chinese beside SebType's input method (above): told, with
+# how to drop such a group (Fcitx5 saves it as it quits), since setup took Fcitx5's own settings away. The
+# first group is left out: step 7 takes Rime out of it, also in a dry run, which changes nothing yet.
+# A dry run before step 1b's install says it as the run would.
+if ((sebtype_coming)) || [[ -n $(installed sebtype) || -f /usr/lib64/fcitx5/sebtype.so ]]; then
+  rime_names=() removes=()
+  while IFS=$'\t' read -r n name; do
+    ((n)) || continue
+    rime_names+=("\"$name\"")
+    removes+=("busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 RemoveInputMethodGroup s $(printf %q "$name")")
+  done < <(rime_groups)
+  if ((${#rime_names[@]})); then
+    s=; ((${#rime_names[@]} > 1)) && s=s
+    names=$(printf ', %s' "${rime_names[@]}") cmds=$(printf '; %s' "${removes[@]}")
+    warn "Rime in input method group$s ${names:2} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文: Use SebType on SebType Configurator's About page puts it in Rime's place and keeps the other input methods. Or remove the group$s: ${cmds:2}"
   fi
 fi
 
@@ -681,23 +742,26 @@ rime_changed=0  # steps 12 to 13b set it; 13c deploys
 # 12. Chinese reads 中文 in the switch popup and the tray text (#69). fcitx5-rime's label is the first
 # character of the schema name (雾 from 雾凇拼音), unless the name starts with "."; then Fcitx5 shows the
 # input method's own label. So the schema name becomes ".中文" (its id stays rime_ice, so learned words
-# stay) and this account's copy of Rime's input method entry is named and labelled 中文. The same patch
-# sets typo correction (#46, in SebType's Chinese data) to a PC keyboard's neighbour keys.
+# stay). The same patch sets typo correction (#46, in SebType's Chinese data) to a PC keyboard's neighbour keys.
+# Older setups also named fcitx5-rime's input method entry 中文 (this account's rime.conf). fcitx5-rime stays
+# off beside SebType's input method now (#542), so that copy goes, as it was written: the entry reads Rime
+# again, the name setup's warnings and fcitx5-rime after uninstalling use.
 rime_im=$im_dir/rime.conf
-want_im=$'[InputMethod]\nName=中文\nIcon=fcitx-rime\nLabel=中文\nLangCode=zh\nAddon=rime\nConfigurable=True'
-lines='  schema/name: ".中文"  # SebType: Fcitx5 shows rime.conf'\''s label 中文 instead of 雾 (#69)
+if [[ $(cat "$rime_im" 2>/dev/null) == "$old_rime_im" ]] &&
+  change "give Rime (fcitx5-rime) its own name back: remove $rime_im, which named it 中文 (backup in $backup)"; then
+  save "$rime_im"; rm "$rime_im"
+  restart_later "input method names"
+fi
+lines='  schema/name: ".中文"  # SebType: Fcitx5 shows the input method entry'\''s label instead of 雾 (#69)
   sebtype_typo/keyboard: pc  # SebType: typo correction for a PC keyboard (#46)'
 src=$rime_custom; [[ -f $src ]] || src=/dev/null
 want_custom=$(awk -v lines="$lines" '/^  (schema\/name|sebtype_typo\/keyboard):/ { next } { print } /^patch:/ && !done { print lines; done = 1 }
   END { if (!done) print "patch:\n" lines }' "$src")
-if { [[ $(cat "$rime_im" 2>/dev/null) != "$want_im" ]] || [[ $(cat "$src") != "$want_custom" ]]; } &&
-  change "label Chinese 中文 instead of 雾 and set typo correction to a PC keyboard in $rime_im and $rime_custom (backup in $backup; undo: $0 --undo-names)"; then
-  for f in "$rime_im" "$rime_custom"; do [[ -f $f ]] && save "$f"; done
-  mkdir -p "${rime_im%/*}" "$rime_dir"
-  printf '%s\n' "$want_im" > "$rime_im"; printf '%s\n' "$want_custom" > "$rime_custom"
+if [[ $(cat "$src") != "$want_custom" ]] &&
+  change "label Chinese 中文 instead of 雾 and set typo correction to a PC keyboard in $rime_custom (backup in $backup; undo: $0 --undo-names)"; then
+  [[ -f $rime_custom ]] && save "$rime_custom"
+  mkdir -p "$rime_dir"; printf '%s\n' "$want_custom" > "$rime_custom"
   rime_changed=1
-  # Fcitx5 reads input method entries when it starts.
-  restart_later "input method names"
 fi
 
 # 12b. Japanese reads 日本語 and English reads English in the tray menu and the switch popup (#92), not

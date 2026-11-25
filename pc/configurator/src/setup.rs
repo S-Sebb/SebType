@@ -199,14 +199,26 @@ pub enum Need {
     },
     /// Windows: each 中文 and 日本語 in the language list has SebType's text service. The button adds it.
     Languages,
+    /// Linux: Fcitx5 groups with fcitx5-rime's Rime, which won't type Chinese beside SebType's input method (#542).
+    /// The button puts SebType's input method in its place. An error, when Fcitx5's groups couldn't be read,
+    /// keeps the row open rather than done.
+    Rime { groups: Result<Vec<String>, String> },
 }
 
 /// This check's rows, with those an earlier one showed and this one doesn't find any more kept, done, in
 /// their place: a step stays on the page, ticked, once the person has done it.
+/// The Rime row is one row whichever groups it lists, so a group done of several isn't a second row. The
+/// check gives it done, with no groups, only when Fcitx5 said so: shown only in place of an earlier Rime row.
+/// When the check couldn't ask (no Fcitx5 while it restarts), an earlier Rime row stays as it was.
 pub fn keep_done(before: &[(Need, bool)], mut now: Vec<(Need, bool)>) -> Vec<(Need, bool)> {
-    for (i, (need, _)) in before.iter().enumerate() {
-        if !now.iter().any(|(n, _)| n == need) {
-            now.insert(i.min(now.len()), (need.clone(), true));
+    let rime = |n: &Need| matches!(n, Need::Rime { .. });
+    let same = |a: &Need, b: &Need| a == b || (rime(a) && rime(b));
+    if !before.iter().any(|(n, _)| rime(n)) {
+        now.retain(|(n, ok)| !(rime(n) && *ok));
+    }
+    for (i, (need, ok)) in before.iter().enumerate() {
+        if !now.iter().any(|(n, _)| same(n, need)) {
+            now.insert(i.min(now.len()), (need.clone(), *ok || !rime(need)));
         }
     }
     now
@@ -221,8 +233,23 @@ fn home_short(path: &std::path::Path) -> String {
     }
 }
 
+/// Names as the page lists them in the page's language: “Default”, “Rime”; “Default”、“Rime” in 中文;
+/// 「Default」、「Rime」 in 日本語. The translations put no spaces around them.
+pub fn quoted(names: &[String], lang: &str) -> String {
+    let (open, close, sep) = match lang {
+        "ja" => ("「", "」", "、"),
+        "zh" => ("“", "”", "、"),
+        _ => ("“", "”", ", "),
+    };
+    names
+        .iter()
+        .map(|n| format!("{open}{n}{close}"))
+        .collect::<Vec<_>>()
+        .join(sep)
+}
+
 /// The page's rows, as SetupState's ready-checks shows them.
-fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
+fn ready_rows(checks: &[(Need, bool)], lang: &str) -> Vec<crate::ReadyCheck> {
     checks
         .iter()
         .map(|(need, ok)| {
@@ -233,6 +260,9 @@ fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
                     (2, home_short(file), *line as i32, text.clone())
                 }
                 Need::Languages => (3, String::new(), 0, String::new()),
+                // line: how many groups, or 0 with the reason they couldn't be read
+                Need::Rime { groups: Ok(g) } => (4, String::new(), g.len() as i32, quoted(g, lang)),
+                Need::Rime { groups: Err(e) } => (4, String::new(), 0, e.clone()),
             };
             // A line in the person's own file is turned off by the button; a system file opens.
             let own = matches!(need, Need::ImModule { file, .. }
@@ -566,17 +596,19 @@ pub fn run(start: Start, lang: &str) -> Result<(), slint::PlatformError> {
     let recheck = {
         let weak = win.as_weak();
         let (checks, checking) = (checks.clone(), checking.clone());
+        let lang = lang.to_string();
         move || {
             use std::sync::atomic::Ordering;
             if checking.swap(true, Ordering::SeqCst) {
                 return;
             }
-            let (weak, checks, checking) = (weak.clone(), checks.clone(), checking.clone());
+            let (weak, checks, checking, lang) =
+                (weak.clone(), checks.clone(), checking.clone(), lang.clone());
             std::thread::spawn(move || {
                 let rows = {
                     let mut c = checks.lock().unwrap();
                     *c = keep_done(&c, platform::ready_checks());
-                    ready_rows(&c)
+                    ready_rows(&c, &lang)
                 };
                 checking.store(false, Ordering::SeqCst);
                 let _ = weak.upgrade_in_event_loop(move |win| {
@@ -789,6 +821,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// #542: group names in the quotes of the page's language, as its other strings quote.
+    #[test]
+    fn group_names_are_quoted_as_the_language_quotes() {
+        let names = ["Default".to_string(), "My=Rime".to_string()];
+        assert_eq!(quoted(&names, "en"), "“Default”, “My=Rime”");
+        assert_eq!(quoted(&names, "zh"), "“Default”、“My=Rime”");
+        assert_eq!(quoted(&names, "ja"), "「Default」、「My=Rime」");
+    }
+
+    /// #542: Rime's row stays one row as its groups get done, and ticks once none is left.
+    #[test]
+    fn rime_row_stays_one_row() {
+        let rime = |g: &[&str]| Need::Rime {
+            groups: Ok(g.iter().map(|g| g.to_string()).collect()),
+        };
+        let first = keep_done(&[], vec![(rime(&["Default", "Work"]), false)]);
+        assert_eq!(
+            keep_done(&first, vec![(rime(&["Work"]), false)]),
+            [(rime(&["Work"]), false)]
+        );
+        // Fcitx5 said none is left: ticked.
+        assert_eq!(
+            keep_done(&first, vec![(rime(&[]), true)]),
+            [(rime(&[]), true)]
+        );
+        assert_eq!(keep_done(&first, vec![]), first);
+        // No Rime row before, none now: no row.
+        assert_eq!(keep_done(&[], vec![(rime(&[]), true)]), []);
+    }
+
     /// #445: a step the person did stays on the last page, ticked, in its place; the page is ready once
     /// every row is.
     #[test]
@@ -817,7 +879,7 @@ mod tests {
         );
         assert_eq!(now[1], (module(3), true));
         assert_eq!(now.len(), 4);
-        let rows = ready_rows(&now);
+        let rows = ready_rows(&now, "en");
         assert_eq!(
             rows.iter().map(|r| (r.kind, r.ok)).collect::<Vec<_>>(),
             [(0, true), (2, true), (2, false), (1, false)]

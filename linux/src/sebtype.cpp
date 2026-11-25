@@ -7,6 +7,8 @@
 #include <fcitx-utils/log.h>
 #include <fcitx-utils/standardpaths.h>
 #include <fcitx-utils/utf8.h>
+#include <fcitx/addoninfo.h>
+#include <fcitx/addonmanager.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputmethodmanager.h>
@@ -66,12 +68,31 @@ std::string chineseModel() {
   return fcitx::StandardPaths::global().locate(fcitx::StandardPathsType::Data, "sebtype/chinese.gguf").string();
 }
 
+// 中文 with no librime: Core says 中文 isn't available, in the tray and the popup, and keys go in as typed (#275).
+struct Unavailable final : Engine {
+  bool key(const Key &) override { return false; }
+  std::string takeCommit() override { return {}; }
+  Preedit preedit() override { return {}; }
+  bool composing() override { return false; }
+  void flush() override {}
+  void clear() override {}
+  bool latin() override { return false; }
+  void setLatin(bool) override {}
+  bool alternate() override { return false; }
+  void setAlternate(bool) override {}
+  bool available() override { return false; }
+};
+
 }  // namespace
 
 std::unique_ptr<Engine> SebTypeEngine::makeEngine(Lang lang) {
   if (lang == Lang::English) return nullptr;  // keys go to the app as typed
   const auto rimeUser = fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgData) / "rime";
   if (lang == Lang::Chinese) {
+    // fcitx5-rime loaded before SebType (in use when SebType was installed and found at a Refresh, which turns it
+    // off only from then on) has Rime's folder open: a second librime would deploy into its build/ and learn into
+    // its userdb (#542). None opens until Fcitx5 restarts, when SebType loads first and keeps fcitx5-rime off.
+    if (instance_->addonManager().addon("rime")) return std::make_unique<Unavailable>();  // keepFcitx5RimeOff warned
     fs::create_directories(rimeUser);
     auto rime = makeRime({RIME_DATA_DIR, rimeUser.string()});
     static const std::string model = chineseModel();
@@ -215,13 +236,49 @@ void Service::setLanguage(const std::string &id) {
   engine_->update(engine_->instance()->mostRecentInputContext());
 }
 
+namespace {
+
+// fcitx5-rime's add-on stays off in the Fcitx5 that loads SebType (#542). With its own librime inside (#527),
+// SebType would run a second librime beside fcitx5-rime's on the same Rime folder: both deploy into one build/
+// and write one rime_ice.userdb, which LevelDB allows only one of them. The override is this process's only, as
+// Fcitx5's --disable is, so removing sebtype lets fcitx5-rime load again. fcitx5-rime loads on demand, so not
+// before this add-on, which Fcitx5 loads at its start, nor before a Refresh's find of it is turned off (below).
+void keepFcitx5RimeOff(fcitx::AddonManager &addons) {
+  const auto *rime = addons.addonInfo("rime");
+  if (!rime) return;
+  const_cast<fcitx::AddonInfo *>(rime)->setOverrideEnabled(fcitx::OverrideEnabled::Disabled);
+  if (addons.addon("rime")) FCITX_WARN() << "fcitx5-rime was loaded before SebType: 中文 waits for Fcitx5's restart";
+  else FCITX_INFO() << "fcitx5-rime stays off beside SebType, which types 中文 with the same Rime folder";
+}
+
+}  // namespace
+
 SebTypeEngine::SebTypeEngine(fcitx::Instance *instance)
     : instance_(instance), core_(std::make_unique<Core>([this](Lang l) { return makeEngine(l); }, readSettings())) {
+  keepFcitx5RimeOff(instance_->addonManager());
   core_->setUiLanguage(systemLanguage());
   setPill("");
   if (auto *dbus = instance_->addonManager().addon("dbus")) {
+    auto *bus = dbus->call<fcitx::IDBusModule::bus>();
     service_ = std::make_unique<Service>(this);
-    dbus->call<fcitx::IDBusModule::bus>()->addObjectVTable("/sebtype", "org.sebtype.Core1", *service_);
+    bus->addObjectVTable("/sebtype", "org.sebtype.Core1", *service_);
+    // Fcitx5 finds an add-on installed since it started at the controller's Refresh, which it runs from the
+    // event loop after replying. SebType answers the call itself and runs the same refresh, with fcitx5-rime
+    // turned off in the same step, so no client's call can pick it in between (#542).
+    refreshWatch_ = bus->addFilter([this](fcitx::dbus::Message &message) {
+      if (message.type() != fcitx::dbus::MessageType::MethodCall || message.member() != "Refresh" ||
+          message.interface() != "org.fcitx.Fcitx.Controller1" || message.path() != "/controller") {
+        return false;
+      }
+      message.createReply().send();
+      refresh_ = instance_->eventLoop().addDeferEvent([this](fcitx::EventSource *) {
+        instance_->refresh();
+        keepFcitx5RimeOff(instance_->addonManager());
+        refresh_.reset();
+        return false;
+      });
+      return true;
+    });
   }
 }
 

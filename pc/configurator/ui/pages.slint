@@ -701,6 +701,44 @@ component AboutPage inherits Page {
                 }
             }
         }
+        // Rime in groups of the person's, which SebType's input method keeps off (#542), whenever Fcitx5 has
+        // some. A layout, not a Row: a Row's height doesn't follow its wrapped text past two lines.
+        if State.rime-groups != "": Divider { }
+        if State.rime-groups != "": HorizontalLayout {
+            padding-left: Theme.row-padding-x;
+            padding-right: Theme.row-padding-x;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: State.rime-count == 0
+                        ? @tr("SebType couldn't read Fcitx5's input method groups to check them for Rime: {}", State.rime-groups)
+                        : State.rime-count == 1
+                        ? @tr("Rime in input method group {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", State.rime-groups)
+                        : @tr("Rime in input method groups {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", State.rime-groups);
+                    color: Theme.ink;
+                    font-size: Theme.body-size;
+                    wrap: word-wrap;
+                }
+                if State.rime-error != "" && State.rime-count > 0: Text {
+                    text: State.rime-error;
+                    color: Theme.danger;
+                    font-size: Theme.detail-size;
+                    wrap: word-wrap;
+                }
+            }
+            if State.rime-count > 0: VerticalLayout { alignment: center;
+                Button {
+                    text: State.rime-busy ? "…" : @tr("Use SebType");
+                    enabled: !State.rime-busy;
+                    clicked => { State.use-sebtype-for-rime(); }
+                }
+            }
+        }
         if State.update-notes.length > 0: Divider { }
         if State.update-notes.length > 0: notes-scroll := ScrollView {
             height: min(notes-content.preferred-height, 240px);

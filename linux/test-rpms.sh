@@ -129,7 +129,7 @@ check stable-sonames stable_sonames
 fcitx5_loads() {
   local log
   log=$(HOME=$(mktemp -d) timeout 20 dbus-run-session -- fcitx5 --verbose='*=5' --disable=all --enable=dbus,keyboard,sebtype 2>&1)
-  grep -q 'Loaded addon sebtype' <<<"$log" && grep -q 'input method(s) in addon sebtype' <<<"$log" || { echo "$log"; return 1; }
+  { grep -q 'Loaded addon sebtype' <<<"$log" && grep -q 'input method(s) in addon sebtype' <<<"$log"; } || { echo "$log"; return 1; }
 }
 check fcitx5-loads fcitx5_loads
 
@@ -151,8 +151,8 @@ expected() {
   # The Configurator's crates (#548; the spec's %check checks that each has its text): Slint's Royalty-free
   # licence, and dbus's (in keyring's libdbus-sys).
   f=/usr/share/licenses/sebtype/configurator-crates-LICENSE
-  grep -q 'Slint Royalty-free Desktop, Mobile, and Web Applications License' "$f" && grep -q 'Academic Free License' "$f" &&
-    grep -qx '  libdbus-sys [0-9.]*' "$f" || { echo "not the Configurator's crates' licences: $f"; return 1; }
+  { grep -q 'Slint Royalty-free Desktop, Mobile, and Web Applications License' "$f" && grep -q 'Academic Free License' "$f" &&
+    grep -qx '  libdbus-sys [0-9.]*' "$f"; } || { echo "not the Configurator's crates' licences: $f"; return 1; }
   # What setup's user part copies is this checkout's.
   # rpmbuild makes setup's #!/usr/bin/env bash /usr/bin/bash.
   cmp <(tail -n +2 /src/pc/linux/setup-ime.sh) <(tail -n +2 /usr/libexec/sebtype/setup-ime.sh) &&
@@ -162,7 +162,7 @@ expected() {
 }
 check files-expected expected
 
-links() { local out; out=$(ldd "$1") && ! grep 'not found' <<<"$out" || { echo "$1: $out"; return 1; }; }
+links() { local out; { out=$(ldd "$1") && ! grep 'not found' <<<"$out"; } || { echo "$1: $out"; return 1; }; }
 libraries() {
   local f bad=0
   while read -r f; do

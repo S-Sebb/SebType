@@ -71,7 +71,7 @@ live_dry() {
     -e "install SebType's Chinese data" -e "set Mozc's keymap" -e "^would: replace SebType's old librime" \
     -e 'English ⇄ the last other language' -e 'remove the old SebType icon theme' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' \
     -e "turn off Fcitx5's .* hotkeys" -e "^would: remove .*, Fcitx5's own settings" -e "^would: install SebType's input method" \
-    -e "^would: show SebType's tray menu" \
+    -e "^would: show SebType's tray menu" -e '^would: give Rime (fcitx5-rime) its own name back' \
     -e "^would: schedule SebType's daily update check" && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
@@ -112,10 +112,11 @@ stub busctl 'case "$*" in
   *ReloadConfig*) echo reload >> "$FAKE/reload.log" ;;
   *AvailableInputMethods*) echo "a(ssssssb) 2 \"keyboard-us\" \"English\" \"\" \"\" \"\" \"en\" false \"sebtype\" \"SebType\" \"\" \"\" \"\" \"\" false" ;;
   *SetInputMethodGroupInfo*) echo "$*" > "$FAKE/set.log"
-    echo "sa(ss) \"us\" 1 \"sebtype\" \"\"" > "$FAKE/group" ;;
+    echo "{\"type\":\"sa(ss)\",\"data\":[\"us\",[[\"sebtype\",\"\"]]]}" > "$FAKE/group" ;;
   *SetCurrentIM*) echo "$*" >> "$FAKE/current-im.log" ;;
-  *InputMethodGroups*) echo "as 1 \"Default\"" ;;
-  *InputMethodGroupInfo*) cat "$FAKE/group" 2>/dev/null || echo "sa(ss) \"us\" 1 \"keyboard-us\" \"\"" ;;
+  *InputMethodGroups*) cat "$FAKE/groups" 2>/dev/null || echo "{\"type\":\"as\",\"data\":[[\"Default\"]]}" ;;
+  *InputMethodGroupInfo*) g=${*: -1}; [[ -f $FAKE/group-$g ]] && { cat "$FAKE/group-$g"; exit; }
+    cat "$FAKE/group" 2>/dev/null || echo "{\"type\":\"sa(ss)\",\"data\":[\"us\",[[\"keyboard-us\",\"\"]]]}" ;;
 esac'
 h=$fake/home
 printf '[Desktop Entry]\nName=wechat\nExec=/usr/bin/wechat %%U\n' > "$h/.local/share/applications/wechat.desktop"
@@ -129,9 +130,10 @@ printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db
 printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
 # The fake account has no Rust either: the Configurator built above is newer than its sources, so
 # setup-ime.sh doesn't rebuild it.
+hide=()  # a wrapper for fake_run: SebType's add-on hidden, as before its install
 fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "$rime_data" "$h/scratch/SebType/cache/"
   touch "$h/scratch/SebType/cache/sebtype/${sebtype_rpm##*/}"  # a placeholder: the fake sudo installs nothing
-  env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
+  "${hide[@]}" env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
   XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
 
 fresh_dry() {
@@ -152,7 +154,7 @@ fresh_apply() {
     grep -q 'Default us 1 sebtype $' "$fake/set.log" && grep -q 'SetCurrentIM s sebtype$' "$fake/current-im.log" &&
     grep -qx 'systemctl --user set-environment XMODIFIERS=@im=fcitx' "$fake/systemctl.log" && [[ ! -e $fake/sudo.log ]] &&
     cmp ../../linux/data/notificationitem.conf "$h/.local/share/fcitx5/addon/notificationitem.conf" &&
-    fcitx_hotkeys && mozc_keymap && tray_icons && grep -qx 'Label=中文' "$h/.local/share/fcitx5/inputmethod/rime.conf" &&
+    fcitx_hotkeys && mozc_keymap && tray_icons && [[ ! -e $h/.local/share/fcitx5/inputmethod/rime.conf ]] &&
     grep -qx 'Name=日本語' "$h/.local/share/fcitx5/inputmethod/mozc.conf" &&
     grep -qx 'Name=English' "$h/.local/share/fcitx5/inputmethod/keyboard-us.conf" &&
     grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
@@ -280,17 +282,21 @@ old_icon_theme() {
   printf '[Icons]\nTheme=Fluent-dark\n' > "$g"; rm -f "$fake/emit.log"
 }
 
-# --undo-names removes the three renamed input method entries and the 中文 schema name, keeping the
+# --undo-names removes the two renamed input method entries and the 中文 schema name, keeping the
 # typo keyboard line; a second undo changes nothing, and setup names them again.
 undo_names() {
-  local d=$h/.local/share/fcitx5 o
+  local d=$h/.local/share/fcitx5 o r
+  # An rime.conf of the person's own, not the one setup up to 0.2.0 wrote, stays (#542).
+  r=$d/inputmethod/rime.conf
+  printf '[InputMethod]\nName=我的中文\nIcon=fcitx-rime\nLabel=中文\nLangCode=zh\nAddon=rime\nConfigurable=True\n' > "$r"
   o=$(fake_run --undo-names < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^change:' <<<"$o") == 4 && ! -e $d/inputmethod/rime.conf && ! -e $d/inputmethod/mozc.conf &&
+  [[ $(grep -c '^change:' <<<"$o") == 3 && ! -e $d/inputmethod/mozc.conf &&
     ! -e $d/inputmethod/keyboard-us.conf ]] && ! grep -q 'schema/name' "$d/rime/rime_ice.custom.yaml" &&
     grep -q '^  sebtype_typo/keyboard: pc' "$d/rime/rime_ice.custom.yaml" &&
     o=$(fake_run --undo-names < /dev/null) && [[ -z $o ]] &&
     o=$(fake_run < /dev/null) && [[ $(grep -c '^change: \(label Chinese\|name mozc 日本語\|name keyboard-us English\)' <<<"$o") == 3 ]] &&
-    grep -qx 'Name=日本語' "$d/inputmethod/mozc.conf" && grep -q '^  schema/name: ".中文"' "$d/rime/rime_ice.custom.yaml"
+    grep -qx 'Name=日本語' "$d/inputmethod/mozc.conf" && grep -q '^  schema/name: ".中文"' "$d/rime/rime_ice.custom.yaml" &&
+    grep -qx 'Name=我的中文' "$r" && rm "$r"
 }
 
 # --undo-configurator removes the app and its daily update check (#422), stopping a check that waits on its
@@ -1161,6 +1167,216 @@ PY
 if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
   check private-field private_field
 else result SKIP private-field "needs fcitx5, dbus-run-session and python3-gobject"
+fi
+
+# fcitx5-rime beside SebType (#542): setup on an account with SebType installed and Rime in the running Fcitx5's
+# first group and another says, with the first group's change, that Rime won't type Chinese, warns of the other
+# group by its name, and gives Rime its name back from an older setup's 中文; from the profile, with two other
+# groups, it names both, also in a dry run, which leaves the first group's Rime for now. A private Fcitx5 (as above) asked to load
+# both, with Rime picked first, loads no fcitx5-rime, also when fcitx5-rime is installed while it runs and found
+# at a Refresh, so it runs no second librime on Rime's folder, and SebType's 中文 learns a pick. With both, the
+# librime second to open rime_ice.userdb found it locked (one LevelDB, #532) or, with a LevelDB of each (#554),
+# both opened it to write, which LevelDB never allows. Without SebType (removed), the same account's fcitx5-rime types.
+both_rimes() {
+  local h=$fake/both-rimes o rc
+  mkdir -p "$h/.local/share/fcitx5/inputmethod"
+  printf '[InputMethod]\nName=中文\nIcon=fcitx-rime\nLabel=中文\nLangCode=zh\nAddon=rime\nConfigurable=True\n' > "$h/.local/share/fcitx5/inputmethod/rime.conf"
+  cp "$fake/group" "$fake/group.kept" 2>/dev/null; cp "$fake/sebtype" "$fake/sebtype.kept" 2>/dev/null
+  echo -n "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" > "$fake/sebtype"
+  # A zh Fcitx5's first group, 默认, which busctl's plain output escapes, and a name with a space and quotes.
+  echo '{"type":"as","data":[["默认","My \"Rime\" =1"]]}' > "$fake/groups"
+  echo '{"type":"sa(ss)","data":["us",[["keyboard-us",""],["rime",""]]]}' > "$fake/group"
+  echo '{"type":"sa(ss)","data":["us",[["rime",""]]]}' > "$fake/group-My \"Rime\" =1"
+  o=$(fake_run < /dev/null); rc=$?; echo "$o"
+  # The same from the profile when Fcitx5 doesn't run, in a second account.
+  local h2=$fake/both-rimes-profile o2 o3 two q
+  mkdir -p "$h2/.config/fcitx5"
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=rime\nLayout=\n\n[Groups/1]\nName=My=Rime\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/1/Items/0]\nName=rime\nLayout=\n\n[Groups/2]\nName=Bob'"'"'s\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/2/Items/0]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n1=My=Rime\n2=Bob'"'"'s\n' \
+    > "$h2/.config/fcitx5/profile"
+  touch "$fake/no-fcitx"
+  o3=$(h=$h2 fake_run --dry-run < /dev/null) || rc=1; echo "$o3"
+  o2=$(h=$h2 fake_run < /dev/null) || rc=1; echo "$o2"
+  # A dry run before setup installs SebType says it as the run would.
+  local o4 hide=(bwrap --dev-bind / / --ro-bind /dev/null /usr/lib64/fcitx5/sebtype.so)
+  rm "$fake/sebtype"; o4=$(h=$h2 fake_run --dry-run < /dev/null) || rc=1; rm "$fake/no-fcitx"; echo "$o4"
+  rm -f "$fake/groups" "$fake/group-My \"Rime\" =1" "$fake/sebtype" "$fake/group"
+  mv "$fake/group.kept" "$fake/group" 2>/dev/null; mv "$fake/sebtype.kept" "$fake/sebtype" 2>/dev/null
+  ((rc == 0)) &&
+    grep -q "^change: make SebType's input method the one in Fcitx5 input method group 默认, .*)$" <<<"$o" &&
+    grep -q "^  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back or restore profile from $fake/.*, with Fcitx5 stopped as https://.*#removing-sebtype says$" <<<"$o" &&
+    [[ $(grep -c '^warning: Rime in' <<<"$o") == 1 ]] &&
+    grep -qF "warning: Rime in input method group \"My \"Rime\" =1\" won't type Chinese while SebType is installed. Type Chinese with SebType's 中文: Use SebType on SebType Configurator's About page puts it in Rime's place and keeps the other input methods. Or remove the group: busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 RemoveInputMethodGroup s My\\ \\\"Rime\\\"\\ =1" <<<"$o" &&
+    grep -q 'SetInputMethodGroupInfo ssa(ss) 默认 us 1 sebtype $' "$fake/set.log" &&
+    grep -q '^change: give Rime (fcitx5-rime) its own name back' <<<"$o" &&
+    [[ ! -e $h/.local/share/fcitx5/inputmethod/rime.conf ]] &&
+    grep -q "^change: set SebType as the input method in .*)$" <<<"$o2" &&
+    grep -q "^  Rime (fcitx5-rime) won't type Chinese" <<<"$o2" &&
+    q=\' && two="^warning: Rime in input method groups \"My=Rime\", \"Bob${q}s\" won${q}t type Chinese .*\\. Or remove the groups: busctl .* s My=Rime; busctl .* s Bob\\\\${q}s\$" &&
+    [[ $(grep -c '^warning: Rime in' <<<"$o2") == 1 ]] && grep -q "$two" <<<"$o2" &&
+    [[ $(grep -c '^warning: Rime in' <<<"$o3") == 1 ]] && grep -q "$two" <<<"$o3" &&
+    grep -q "^would: install SebType's input method" <<<"$o4" && grep -q "$two" <<<"$o4" ||
+    return 1
+  mkdir -p "$h/.config/fcitx5"
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    > "$h/.config/fcitx5/profile"
+  # Fcitx5's add-on folder without fcitx5-rime's entry until the test installs it there.
+  mkdir -p "$h/addon"; cp /usr/share/fcitx5/addon/*.conf "$h/addon/"; mv "$h/addon/rime.conf" "$h/rime-addon.conf"
+  # SebType's add-on folder, writable: the test takes SebType's entry away and back.
+  mkdir -p "$h/own-addon"; cp "$own"/usr/share/fcitx5/addon/*.conf "$h/own-addon/"
+  private_bus "$h" 600 "${own_fcitx[@]}" --bind "$h/addon" /usr/share/fcitx5/addon \
+    --bind "$h/own-addon" "$own/usr/share/fcitx5/addon" \
+    python3 -u - "$out/fcitx5-both-rimes" "$h/rime-addon.conf" <<'PY'
+import os, shutil, subprocess, sys, time
+from gi.repository import Gio, GLib
+
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(path, iface, method, sig=None, *args):  # never D-Bus-activates a second, default Fcitx5
+    return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+CONTROLLER, IC, SEBTYPE = ('/controller', 'org.fcitx.Fcitx.Controller1'), 'org.fcitx.Fcitx.InputContext1', ('/sebtype', 'org.sebtype.Core1')
+def wait(cond, secs):
+    end = time.time() + secs
+    while time.time() < end and not cond():
+        GLib.MainContext.default().iteration(False); time.sleep(0.02)
+    return cond()
+def up():
+    try: call(*CONTROLLER, 'CurrentInputMethod'); return True
+    except GLib.Error: return False
+KEYS = {'space': (0x20, 65), 'Escape': (0xff1b, 9), '2': (0x32, 11), '3': (0x33, 12), '4': (0x34, 13),
+        **{c: (ord(c), code) for row, first in (('qwertyuiop', 24), ('asdfghjkl', 38), ('zxcvbnm', 52))
+           for code, c in enumerate(row, first)}}
+committed = []
+def start(addons, log):
+    fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,' + addons],
+                             stdout=subprocess.DEVNULL, stderr=open(log, 'w'))
+    wait(up, 10)
+    ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+                 '(a(ss))', [('program', 'sebtype-test')])
+    def on_signal(_c, _s, _p, _i, name, params):
+        if name == 'CommitString': committed.append(params.unpack()[0])
+    bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
+    call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
+    call(ic, IC, 'FocusIn')
+    return fcitx, ic
+def tap(ic, name):
+    for release in (False, True):
+        call(ic, IC, 'ProcessKeyEvent', '(uuubu)', *KEYS[name], 0, release, 0)
+        wait(lambda: False, 0.03)
+def commit(ic, keys):
+    committed.clear()
+    for k in keys: tap(ic, k)
+    wait(lambda: committed, 3)
+    return ''.join(committed)
+def ready(ic):  # Rime deploys on first use and takes no keys until then; SebType's pinyin shows in its panel
+    return not commit(ic, [*'ni', 'space']).isascii()
+
+ok = True
+def check(name, got, want):
+    global ok
+    ok &= got == want
+    print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
+
+# fcitx5-rime installed while SebType's Fcitx5 runs, which finds it at a Refresh.
+log = sys.argv[1] + '-installed.log'
+fcitx, ic = start('sebtype,rime', log)
+def listed(): return any(im[0] == 'rime' for im in call(*CONTROLLER, 'AvailableInputMethods')[0])
+check('fcitx5-rime not installed yet', listed(), False)
+shutil.copy(sys.argv[2], '/usr/share/fcitx5/addon/rime.conf')
+call(*CONTROLLER, 'Refresh')
+check('fcitx5-rime found at the Refresh', wait(listed, 5), True)
+wait(lambda: False, 1)
+# Fcitx5 dropped Rime from the group at its start, not knowing it: added back, as the person would.
+call(*CONTROLLER, 'SetInputMethodGroupInfo', '(ssa(ss))', 'Default', 'us', [('sebtype', ''), ('rime', '')])
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+wait(lambda: ready(ic), 20)
+fcitx.terminate(); fcitx.wait(10)
+check('Fcitx5 loaded no fcitx5-rime installed beside SebType', 'Loaded addon rime' in open(log).read(), False)
+
+# The same with Rime picked as soon as the Refresh returns, with no wait for SebType to turn it off.
+os.remove('/usr/share/fcitx5/addon/rime.conf')
+log = sys.argv[1] + '-at-once.log'
+fcitx, ic = start('sebtype,rime', log)
+shutil.copy(sys.argv[2], '/usr/share/fcitx5/addon/rime.conf')
+call(*CONTROLLER, 'Refresh')
+def pick():
+    call(*CONTROLLER, 'SetInputMethodGroupInfo', '(ssa(ss))', 'Default', 'us', [('sebtype', ''), ('rime', '')])
+    call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+    return listed()
+check('Rime picked right after the Refresh', wait(pick, 5), True)
+wait(lambda: ready(ic), 20)
+fcitx.terminate(); fcitx.wait(10)
+check('Fcitx5 loaded no fcitx5-rime picked right after the Refresh', 'Loaded addon rime' in open(log).read(), False)
+
+log = sys.argv[1] + '.log'
+fcitx, ic = start('sebtype,rime', log)
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+wait(lambda: ready(ic), 60)  # fcitx5-rime, if it loaded, has opened Rime's folder by now
+commit(ic, [*'shishi', 'space'])
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'sebtype')
+call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
+check("SebType's Rime deployed", wait(lambda: ready(ic), 90), True)
+top = commit(ic, [*'shishi', 'space'])
+picked = commit(ic, [*'shishi', '4'])
+check('a 4th candidate picked', bool(picked) and picked != top, True)
+check("SebType's 中文 learns it, with fcitx5-rime asked for too", commit(ic, [*'shishi', 'space']), picked)
+fcitx.terminate(); fcitx.wait(10)
+check('Fcitx5 loaded no fcitx5-rime beside SebType', 'Loaded addon rime' in open(log).read(), False)
+check('no librime found rime_ice.userdb locked by the other', 'LOCK: already held by process' in open(log).read(), False)
+
+# fcitx5-rime in use before SebType is installed without setup (whose restart would load SebType first), which
+# Fcitx5 then finds at a Refresh: fcitx5-rime has Rime's folder open, so SebType's 中文 opens no second librime
+# on it (its typing Chinese means it did). A lock error can't tell: each librime has a LevelDB of its own.
+# Its entry in SebType's folder, and in the system's when this PC has SebType installed.
+confs = [c for c in (os.path.join(os.environ['XDG_DATA_DIRS'].split(':')[0], 'fcitx5/addon/sebtype.conf'),
+                     '/usr/share/fcitx5/addon/sebtype.conf') if os.path.exists(c)]
+for c in confs: os.rename(c, c + '.off')
+log = sys.argv[1] + '-rime-first.log'
+fcitx, ic = start('sebtype,rime', log)
+call(*CONTROLLER, 'SetInputMethodGroupInfo', '(ssa(ss))', 'Default', 'us', [('rime', '')])
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+check('fcitx5-rime types before SebType is installed', wait(lambda: ready(ic), 90), True)
+for c in confs: os.rename(c + '.off', c)
+call(*CONTROLLER, 'Refresh')
+def sebtype_listed(): return any(im[0] == 'sebtype' for im in call(*CONTROLLER, 'AvailableInputMethods')[0])
+check('SebType found at the Refresh', wait(sebtype_listed, 10), True)
+call(*CONTROLLER, 'SetInputMethodGroupInfo', '(ssa(ss))', 'Default', 'us', [('rime', ''), ('sebtype', '')])
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'sebtype')
+call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
+check("SebType's 中文 opened no librime beside fcitx5-rime's", wait(lambda: ready(ic), 30), False)
+fcitx.terminate(); fcitx.wait(10)
+
+log = sys.argv[1] + '-removed.log'
+fcitx, ic = start('rime', log)
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+check('without SebType, fcitx5-rime types', wait(lambda: ready(ic), 90), True)
+fcitx.terminate(); fcitx.wait(10)
+sys.exit(0 if ok else 1)
+PY
+  local rc=$? p
+  for p in $(pgrep -x fcitx5); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
+  return $rc
+}
+# A group Fcitx5 can't read (gone since the list, or a failed call) fails the whole read of the running groups:
+# never a line with two groups' fields, which named the wrong group in the warning's remove command.
+group_read_fails() {
+  local fns
+  fns=$(sed -n '/^call() {/p; /^running_groups() {/,/^}/p; /^rime_groups() {/,/^}/p' setup-ime.sh)
+  # shellcheck disable=SC2016  # the fake's own script
+  bash -c 'set -euo pipefail; eval "$1"
+    fcitx_on_dbus() { true; }
+    call() { case "$*" in
+      *AvailableInputMethods*) echo "\"sebtype\"" ;;
+      *InputMethodGroups*) echo "{\"type\":\"as\",\"data\":[[\"Work\",\"Other\"]]}" ;;
+      *"s Work") return 1 ;;
+      *) echo "{\"type\":\"sa(ss)\",\"data\":[\"us\",[[\"rime\",\"\"]]]}" ;;
+    esac; }
+    ! out=$(rime_groups 2>/dev/null) && [[ -z $out ]] && [[ $(running_groups 1 2>/dev/null; echo "$?") == 1 ]]' _ "$fns"
+}
+check group-read-fails group_read_fails
+if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null &&
+  [[ -f /usr/lib64/fcitx5/librime.so ]]; then
+  check fcitx5-rime-beside-sebtype both_rimes
+else result SKIP fcitx5-rime-beside-sebtype "needs fcitx5, fcitx5-rime, dbus-run-session and python3-gobject"
 fi
 
 # Win+Space and the tray menu (#92, #93, #117): a private Fcitx5 (as above) with SebType's input method
