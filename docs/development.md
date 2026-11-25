@@ -331,8 +331,9 @@ Notes:
   The grid is portrait's: the test field stays upright even on a phone lying on its side, and the run
   stops before any typing if the screen is turned anyway, or on a device whose natural orientation is
   landscape (#402). Monkey turns auto-rotate on when it ends, so the run puts the device's rotation
-  settings back exactly as it found them afterwards. `android/perf/test-rotation.sh` checks these
-  guards offline, against a fake adb.
+  settings back exactly as it found them afterwards. However it ends (passed, failed or interrupted), it
+  also closes its test field, so the phone is back on its home screen (#587); an interrupt acts once the
+  phase under way ends. `android/perf/test-rotation.sh` checks these offline, against a fake adb.
 
 #### On the phone
 
