@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -15,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NAMES = {
     "Fail", "Skip", "SebTypeFault", "SEBTYPE_LIFE", "LOGCAT_TIME", "logcat_time",
     "choose_sebtype", "restart_unstarted", "to_language", "offers", "PROBE_LANGUAGE", "check", "result",
+    "took",
 }  # fmt: skip
 IME = "dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME"
 OTHER = "com.android.inputmethod.latin/.LatinIME"
@@ -71,6 +73,7 @@ def settings(device):
     ns = dict(
         re=re, os=os, subprocess=subprocess, ET=ET, IME=IME, PKG="dev.sebb.sebtype",
         adb=device, logdir=tmp.name, results_path=os.path.join(tmp.name, "results.txt"),
+        times_path=os.path.join(tmp.name, "settings-check-times.txt"), time=time,
         recoveries=[], current_check="chk", CHECKS=[], NEEDED=set(), passed=set(),
         TIMING=set(), REPEAT=1, _tmp=tmp,
     )  # fmt: skip
@@ -199,6 +202,9 @@ class Check(unittest.TestCase):
                 " keyboard and back, 1x (#352; failing-recovery-2.logcat)",
             ],
         )
+        # A failed check gets its time too (#546).
+        with open(ns["times_path"]) as f:
+            self.assertEqual(f.read(), "plain: 0 s\npassing: 0 s\nfailing: 0 s\n")
 
     def test_a_crash_isnt_retried_away_by_to_language(self):
         device = Device(
