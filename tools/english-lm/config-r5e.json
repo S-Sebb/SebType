@@ -1,5 +1,5 @@
 {
- "name": "r5d",
+ "name": "r5e",
  "init": "ckpt/r4/step-15000",
  "seed": 239,
  "context": 256,

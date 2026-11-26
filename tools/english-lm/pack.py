@@ -185,7 +185,9 @@ def typed_for(rng, word, prefix=True, bare=False):
         w not in bank
     ):  # a word too rare for the bank: its typos made now, kept for the next time
         bank[w] = noise.variants(w)[1:]
-    phone, spell = bank[w]
+    # The bank lists txt among text's typos and abt among about's; someone typing a word's short form means it
+    # (#556), so it is never a typo of the word.
+    phone, spell = ([v for v in vs if v != SHORT.get(w)] for vs in bank[w])
     if "'" in w and (bare or rng.random() >= APOSTROPHE_TYPED):
         w = w.replace("'", "")
     r = rng.random()
