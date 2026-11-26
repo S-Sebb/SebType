@@ -85,14 +85,18 @@ revisions):
 - Topical-Chat, by Amazon: CDLA-Sharing 1.0.
 - Tatoeba (English sentences, export of 2026-11-14), by Tatoeba's contributors: CC BY 2.0 FR.
 
-SebType's Chinese model (engines/sebtype-lm/chinese.gguf, trained by tools/chinese-lm, release r2) is licensed
+SebType's Chinese model (engines/sebtype-lm/chinese.gguf, trained by tools/chinese-lm, release r6) is licensed
 under the Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/).
 It was trained on, and is adapted from, these openly licensed texts (tools/chinese-lm/SOURCES.md has the
 revisions):
 
 - Chinese Wikipedia (dump of 2023-11-01, via the wikimedia/wikipedia dataset), by Wikipedia's contributors:
   CC BY-SA.
-- LCCC base (Large-scale Cleaned Chinese Conversation, Wang et al. 2020, thu-coai), its train split: MIT.
-- OpenAssistant oasst2 (2023-11-05), its Chinese messages, by the OpenAssistant contributors: Apache-2.0.
 - Chinese Wikinews (dump of 2026-11-01), by Wikinews's contributors: CC BY 2.5.
+- AliMeeting (OpenSLR 119, Yu et al. 2022) and AISHELL-4 (OpenSLR 111, Fu et al. 2021), their meeting
+  transcripts, by Alibaba DAMO Academy and AISHELL: CC BY-SA 4.0.
+- HundredCV-Chat (Jax-dan): Apache-2.0.
+- Tatoeba's Mandarin sentences (export of 2026-11-24), by Tatoeba's contributors: CC BY 2.0 FR.
+- KdConv (Zhou et al. 2020, thu-coai): Apache-2.0.
+- OpenAssistant oasst2 (2023-11-05), its Chinese messages, by the OpenAssistant contributors: Apache-2.0.
 

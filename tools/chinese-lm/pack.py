@@ -24,8 +24,8 @@ A fifth of the spans whose last word has two characters or more end inside it (C
 stop at the same character, and the rest of the word follows <E> as text. The span's last character then
 teaches the <B> logit whether the text there ends a word (#502).
 LOADER of the examples also come as a segment of their own, as the loader writes one (zh_lm.cpp
-contextTokens()): <s>, the field's text before the span, its last CONTEXT characters, and the example, with no
-earlier example in it. Each clause of a chat line also comes typed alone, ALONE times with letters of their own:
+contextTokens()): <s>, the field's text before the span, its last CONTEXT characters (none in EMPTY of them),
+and the example, with no earlier example in it. Each clause of a chat line also comes typed alone, ALONE times with letters of their own:
 <s> and its example, as the loader writes one in an empty field.
 train.py doesn't train the model to predict the typed letters, only the span after <S> and the <E> closing it.
 Word boundaries are jieba's; they teach the <B> logit (tokenizer.py) for the next words after a commit.
@@ -54,16 +54,20 @@ SHARE = {
     "oasst2": 0.005,
 }
 # A chat source is read at most this often per pack, its share falling short: a run reads its 3 packs about 1.6
-# times, so about 7 times in all. #557's r3 read the meetings 47 times and Tatoeba 37: their dev loss rose from
-# step 1500 (3.8 to 7.1 nats per character for the meetings, above a model's that never read them), and with it
-# the slips and news sets fell. HundredCV, read 12 times, didn't rise.
-MAX_PASSES = 1.5
+# times, so about 4 MAX_PASSES times in all. #557's r3, uncapped, read the meetings 47 times and Tatoeba 37: their
+# dev loss rose from step 1500 (3.8 to 7.1 nats per character for the meetings, above a model's that never read
+# them), and with it the slips and news sets fell. At 1.5 (r4) the slips stayed 4 points below r2's on the dev
+# sets, at 4 (r6) they passed r2's, the news sets within a point.
+MAX_PASSES = 4
 EVERY = 30
 MAX_SPAN = 25
 MAX_LETTERS = 64  # zh_lm.h's
 CONTEXT = 64  # zh_lm.cpp's CONTEXT_CHARS
 CUT = 0.2
 LOADER = 0.15
+# A share of the loader-shaped examples come with an empty field, the span alone (#557): the slips set's phrases
+# are typed so, and without LCCC only the chat sources' clauses (ALONE), 5 % of the text, ever came so.
+EMPTY = 0.5
 # How often each chat clause also comes typed alone, in an empty field, each time typed anew. Without them 3 % of
 # the examples have no text before them, almost all Wikipedia's; LCCC's tens of millions of short turns gave r2
 # those of everyday phrases, and #557's r3 lost the slips set's (buaoyisi → 不要太, not 不好意思) typed so. Its r4,
@@ -212,7 +216,10 @@ def segment(rng, text, toks, wb, records, alone=False):
                 if rng.random() < LOADER:
                     rec, rb = [BOS], [2]
                     # The context's word ends count once, in the text.
-                    text_tokens(rec, rb, text[max(0, at - CONTEXT) : at], ends=False)
+                    if rng.random() >= EMPTY:
+                        text_tokens(
+                            rec, rb, text[max(0, at - CONTEXT) : at], ends=False
+                        )
                     example(rec, rb, keys, words[w:k], cut)
                     records.append((rec, rb))
                 at += len(span)

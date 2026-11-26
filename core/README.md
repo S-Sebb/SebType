@@ -39,7 +39,7 @@ lists e-mail domains, and punctuation after a picked word joins it (#39). CMake 
 `src/chinese.cpp` (`withChineseModel` in `include/sebtype/hosts.h`, `-DSEBTYPE_CHINESE_MODEL=ON`, #264) puts
 SebType's Chinese model ([`engines/sebtype-lm`](../engines/sebtype-lm), `zh_lm`) around the Rime engine, as the
 experiment of #259 measured it ([report](../docs/experiments/2026-11-16-chinese-lm.md)). Rime's list shows at
-once. On a worker thread the model scores Rime's first 4 candidates that spell the whole input, adds a beam of 2
+once. On a worker thread the model scores Rime's first 4 candidates that spell the whole input, adds a beam of 3
 of its own, and with nothing typed predicts the next words; the `ready` callback announces its list, which
 replaces Rime's first ones. Each list carries the revision it was asked for, which every key, pick and field or
 setting change moves on; a late one never shows, and a beam still running for an old revision stops. Picking the

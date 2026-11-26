@@ -70,8 +70,11 @@ namespace sebtype {
 namespace {
 
 // The experiment's tuned stack (#259, tune.py on the dev sets): the model scores Rime's first 4, adds a beam
-// of 2 of its own, and ranks by its log probability less 0.5 · ln(1 + Rime's rank), its own counting as rank 4.
-constexpr int kScored = 4, kBeam = 2;
+// of its own, and ranks by its log probability less 0.5 · ln(1 + Rime's rank), its own counting as rank 4. The
+// beam is 3 wide since #557's retrain: at 2 it dropped 大指挥家 for dazhihuijia (#574), its 大指 behind 大致 and
+// 大智 after two letters' syllables, and 3 scored no dev set lower by more than a point, at about 15 % more time
+// per key.
+constexpr int kScored = 4, kBeam = 3;
 constexpr float kRankWeight = 0.5f, kOwnRank = 4;
 // With no Chinese text before the cursor the model knows no more than Rime's dictionary, which it otherwise
 // overrules for words typed alone (按住 → 安卓, #482): there Rime's order weighs 2 · ln(1 + rank) and the
