@@ -1,6 +1,6 @@
 """train.py's labels: the typed letters stay out of the loss wherever the window starts (#502), and <s> is
 never a target. pack.py's examples: a cut word keeps its whole word's reading, and a loader-shaped example
-holds no earlier one, a chat line's first clause comes typed alone too, and 白霜's readings override
+holds no earlier one, each chat clause comes typed alone too, and 白霜's readings override
 pypinyin's (#557).
 
 python tools/chinese-lm/test_train.py
@@ -73,17 +73,15 @@ print(
     f"PASS pack: 重 of 重庆 is chong in {len(typed)} examples, {len(cut_keys)} cut; {records} loader examples"
 )
 
-# A chat line's first clause also comes typed alone: <s>, the example, the whole clause (#557).
+# Each clause of a chat line also comes typed alone, ALONE times: <s>, the example, the whole clause (#557).
 toks, wb, recs = [], [], []
 pack.segment(random.Random(0), "好的，明天见", toks, wb, recs, alone=True)
 alone = [r for r, _ in recs if r[1] == pack.T]
-assert len(alone) == 1, recs
-s = alone[0].index(pack.S)
-assert (
-    "".join(chr(t) for t in alone[0][s + 1 : -1]) == "好的" and alone[0][-1] == pack.E
-), alone
+spans = sorted("".join(chr(t) for t in r[r.index(pack.S) + 1 : -1]) for r in alone)
+assert spans == sorted(["好的", "明天见"] * pack.ALONE), spans
+assert all(r[-1] == pack.E for r in alone), alone
 print(
-    f"PASS pack: 好的，明天见 typed alone as {''.join(map(chr, alone[0][2:s]))} → 好的"
+    f"PASS pack: 好的，明天见 typed alone {len(alone)} times, {' and '.join(sorted(set(spans)))}"
 )
 
 # 白霜's readings override pypinyin's (common.use_readings): 很长 is hen chang, not hen zhang, and 嗯 is en, not

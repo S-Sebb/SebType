@@ -25,8 +25,8 @@ stop at the same character, and the rest of the word follows <E> as text. The sp
 teaches the <B> logit whether the text there ends a word (#502).
 LOADER of the examples also come as a segment of their own, as the loader writes one (zh_lm.cpp
 contextTokens()): <s>, the field's text before the span, its last CONTEXT characters, and the example, with no
-earlier example in it. Each chat line's first clause also comes typed alone: <s> and its example, as the loader
-writes one in an empty field (ALONE).
+earlier example in it. Each clause of a chat line also comes typed alone, ALONE times with letters of their own:
+<s> and its example, as the loader writes one in an empty field.
 train.py doesn't train the model to predict the typed letters, only the span after <S> and the <E> closing it.
 Word boundaries are jieba's; they teach the <B> logit (tokenizer.py) for the next words after a commit.
 """
@@ -64,10 +64,12 @@ MAX_LETTERS = 64  # zh_lm.h's
 CONTEXT = 64  # zh_lm.cpp's CONTEXT_CHARS
 CUT = 0.2
 LOADER = 0.15
-# Chat lines whose first clause also comes typed alone, in an empty field. Without it 3 % of the examples have
-# no text before them, almost all Wikipedia's; LCCC's tens of millions of short turns gave r2 those of
-# everyday phrases, and #557's r3 lost the slips set's (buaoyisi → 不要太, not 不好意思) typed so.
-ALONE = 1.0
+# How often each chat clause also comes typed alone, in an empty field, each time typed anew. Without them 3 % of
+# the examples have no text before them, almost all Wikipedia's; LCCC's tens of millions of short turns gave r2
+# those of everyday phrases, and #557's r3 lost the slips set's (buaoyisi → 不要太, not 不好意思) typed so. Its r4,
+# each line's first clause once, won back half of the dev slips it lost; these examples repeat no text, so
+# don't make the text-only training overfit as more passes over the chat sources did (MAX_PASSES).
+ALONE = 2
 WORKERS = 12
 
 sp = piece = None
@@ -166,12 +168,25 @@ def segment(rng, text, toks, wb, records, alone=False):
         if not common.HAN.match(text[i]):
             end = i
         clause_end[i] = end
-    if alone and words and common.HAN.match(words[0][0]) and rng.random() < ALONE:
-        span, k = span_at(words, 0, 0, len(words), clause_end, reading)
-        if span:
-            rec, rb = [BOS], [2]
-            example(rec, rb, typed_for(rng, reading[: len(span)]), words[:k], 0)
-            records.append((rec, rb))
+    if alone:
+        at = 0
+        for w, word in enumerate(words):
+            # A clause starts with its first Han word.
+            if common.HAN.match(word[0]) and (
+                at == 0 or not common.HAN.match(text[at - 1])
+            ):
+                span, k = span_at(words, w, at, len(words), clause_end, reading)
+                for _ in range(ALONE if span else 0):
+                    rec, rb = [BOS], [2]
+                    example(
+                        rec,
+                        rb,
+                        typed_for(rng, reading[at : at + len(span)]),
+                        words[w:k],
+                        0,
+                    )
+                    records.append((rec, rb))
+            at += len(word)
     at, w = 0, 0
     while w < len(words):
         word = words[w]
