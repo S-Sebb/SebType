@@ -88,6 +88,17 @@ for w in ("to", "grandfathered"):
 # The bank lists txt among text's typos; a short form is meant, so it is never a typo of its word (#556).
 text = Counter(pack.typed_for(rng, "text") for _ in range(4000))
 check("typed_for: text never typed txt", text["txt"] == 0, text.most_common(4))
+# Nor is a texting form another word's typo (rn for run, omg for long); ur for our stays (#556).
+typed = {
+    w: Counter(pack.typed_for(rng, w) for _ in range(4000))
+    for w in ("run", "long", "plus", "our")
+}
+check(
+    "typed_for: no texting form for another word, but ur for our",
+    typed["run"]["rn"] == typed["long"]["omg"] == typed["plus"]["pls"] == 0
+    and typed["our"]["ur"] > 0,
+    {w: c.most_common(3) for w, c in typed.items()},
+)
 check("noise: suffixes both ways", ("ible", "able") in noise.SUFFIXES)
 check(
     "noise: the bank keeps repeated typos", len(noise.variants("the")[1]) == noise.PHONE

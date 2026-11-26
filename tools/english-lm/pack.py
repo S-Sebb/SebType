@@ -52,7 +52,9 @@ import sentencepiece as spm
 sys.path[:0] = [
     str(Path(__file__).resolve().parent),
     str(Path(__file__).resolve().parents[2] / "android/test/english"),
+    str(Path(__file__).resolve().parents[2] / "data/en-dict"),
 ]
+import make_dict
 import make_sets
 import noise
 
@@ -122,6 +124,7 @@ SHORT = {
     "really": "rly",
     "about": "abt",
 }
+TEXTING_FORMS = (set(make_dict.TEXTING_WORDS) | set(SHORT.values())) - {"ur"}
 # "going to London" isn't "gonna London": the "to" short forms need a common verb after them.
 VERB = r"(?= (?:be|go|get|have|do|see|make|take|know|say|come|try|eat|buy|call|tell|keep|give|find|think|look|help|leave|play|start|stop|talk|work|sleep|watch|wait|pay|use|meet|ask|send|put|need|let|cry|miss|lose|win|move|change|read|write|run|drive|stay|show|hang|check|kill|die|be)\b)"
 SHORT_RE = re.compile(
@@ -186,8 +189,13 @@ def typed_for(rng, word, prefix=True, bare=False):
     ):  # a word too rare for the bank: its typos made now, kept for the next time
         bank[w] = noise.variants(w)[1:]
     # The bank lists txt among text's typos and abt among about's; someone typing a word's short form means it
-    # (#556), so it is never a typo of the word.
-    phone, spell = ([v for v in vs if v != SHORT.get(w)] for vs in bank[w])
+    # (#556), so it is never a typo of the word, nor is any texting form a typo of another word: the bank had rn
+    # for run, omg for long and pls for plus. Its ur for our stays: "govern ur" is our (the harness's
+    # phone-typos).
+    phone, spell = (
+        [v for v in vs if v != SHORT.get(w) and v not in TEXTING_FORMS]
+        for vs in bank[w]
+    )
     if "'" in w and (bare or rng.random() >= APOSTROPHE_TYPED):
         w = w.replace("'", "")
     r = rng.random()
