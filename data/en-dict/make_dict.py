@@ -69,6 +69,13 @@ TEXTING_WORDS = [
     "smh",
 ]
 TEXTING_MAX = 90  # about the 85th percentile of the list's weights
+# Left out, each checked: an exact match of the typed letters outweighs the word the text calls for by about
+# 2.5 nats, so these took the letters from it (#561). WOR, a New York radio station's call sign (the base's
+# f=79, 84 % of its Wikipedia uses beside radio or TV words): "At wor" was WOR, not work. wat, in only as
+# wordfreq counts the slang for "what" (SCOWL has it as a Thai temple, written Wat in names): "Wat" stayed.
+# Other call signs stay: by form (W or K, 3-4 capitals), frequency or context they shade into the acronyms
+# people type (KFC, WWF, KGB), with no line between them that isn't a fitted one.
+LEFT_OUT = {"WOR", "wat"}
 ATTRS = {
     "date": "1763164800",
     "dictionary": "main:en_us",
@@ -265,6 +272,8 @@ def main(base_path, wordfreq_path, hunspell_dir, out_dict, out_combined):
         file=sys.stderr,
     )
 
+    for w in LEFT_OUT:
+        del words[w]
     data = v202.encode(ATTRS, words)
     Path(out_dict).write_bytes(data)
     with gzip.open(out_combined, "wt", encoding="utf-8") as out:

@@ -1,0 +1,17 @@
+{
+ "name": "r5e",
+ "init": "ckpt/r4/step-15000",
+ "seed": 239,
+ "context": 256,
+ "model": {"hidden_size": 512, "intermediate_size": 1536, "num_hidden_layers": 8, "num_attention_heads": 8,
+           "num_key_value_heads": 8, "rms_norm_eps": 1e-5, "rope_theta": 10000.0},
+ "train": ["train.5.bin"],
+ "tokens": 7.9e8,
+ "micro_batch": 256,
+ "accum": 8,
+ "lr": 2e-4,
+ "warmup": 100,
+ "weight_decay": 0.1,
+ "eval_every": 250,
+ "save_every": 250
+}

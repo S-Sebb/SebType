@@ -85,6 +85,9 @@ check(
 for w in ("to", "grandfathered"):
     same = sum(pack.typed_for(rng, w) == w for _ in range(4000)) / 4000
     check(f"typed_for: {w!r} typed as it is 40 % of the time", 0.35 < same < 0.5, same)
+# The bank lists txt among text's typos; a short form is meant, so it is never a typo of its word (#556).
+text = Counter(pack.typed_for(rng, "text") for _ in range(4000))
+check("typed_for: text never typed txt", text["txt"] == 0, text.most_common(4))
 check("noise: suffixes both ways", ("ible", "able") in noise.SUFFIXES)
 check(
     "noise: the bank keeps repeated typos", len(noise.variants("the")[1]) == noise.PHONE
@@ -117,6 +120,17 @@ check(
     [w.split()[0] for w in got]
     == ["I'm", "sure.", "You're", "right,", "I've", "said", "so."],
     got,
+)
+# Texting leaves out apostrophes only in the letters typed: the text the model predicts keeps them (#561).
+texting = pack.Texting(random.Random(0))
+texting.drop_apostrophes = texting.lower_i = texting.lower_starts = (
+    texting.drop_stop
+) = True
+texting.short, texting.tail = 0, ""
+check(
+    "texting: the text keeps its apostrophes",
+    texting.text("So what's up? I can't.", True, True) == "so what's up? i can't",
+    texting.text("So what's up? I can't.", True, True),
 )
 check(
     "examples: a word after a quote",
