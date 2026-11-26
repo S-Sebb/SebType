@@ -109,9 +109,10 @@ stub systemctl 'echo "systemctl $*" >> "$FAKE/systemctl.log"; cat "$FAKE/session
 stub flatpak 'exit 1'
 # No Fcitx5 under KWin, as the desktop's would be: the fake's stops when KWin's input method is empty (busctl
 # below), unless $FAKE/fcitx-stays; $FAKE/fcitx-down: none on the bus, KWin still there. $FAKE/kwin-child: an
-# fcitx5 process that KWin started is still there.
-stub ps '[[ -e $FAKE/kwin-child ]] || exit 0
-case "$*" in *-C\ fcitx5*) echo 30 ;; *"-p 30"*) echo kwin_wayland ;; esac'
+# fcitx5 process that KWin started is still there; $FAKE/other-user: one of another account (root's) is.
+stub ps '[[ -e $FAKE/kwin-child || -e $FAKE/other-user ]] || exit 0
+uid=$(id -u); [[ -e $FAKE/other-user ]] && uid=0
+case "$*" in *euid=*-C\ fcitx5*) echo "$uid 30" ;; *-C\ fcitx5*) echo 30 ;; *"-p 30"*) echo kwin_wayland ;; esac'
 # $FAKE/kwrite-fails: KWin's input method can't be set back to Fcitx 5.
 stub kwriteconfig6 '[[ -e $FAKE/kwrite-fails && ${*: -1} == /usr/share/applications/org.fcitx.Fcitx5.desktop ]] && exit 1
 exec '"$(command -v kwriteconfig6)"' "$@"'
@@ -1840,35 +1841,50 @@ check offline-profile-update offline_profile
 # input method back. An Fcitx5 that keeps its bus name, or drops it and still runs, gets nothing put back; a
 # copy that fails fails the undo and keeps the backups.
 undo_all() {
-  local b=$h/.local/share/sebtype/backup c=$h/.config/fcitx5 o sleeper
+  local b=$h/.local/share/sebtype/backup c=$h/.config/fcitx5 o s sleeper
   # A profile with SebType in it (setup up to 0.2.0, then the Configurator's Use SebType) is never taken.
   mkdir -p "$b/19991231-000000" "$b/20000101-000000" "$b/20000101-000000_2" "$b/20000102-000000"
   printf '[Groups/0/Items/0]\nName=sebtype\n' > "$b/19991231-000000/profile"
-  printf '[Groups/0]\nName=Mine\n' > "$b/20000101-000000/profile"; echo later > "$b/20000101-000000_2/profile"
+  # A group of the user's named sebtype is no input method of SebType's: that copy is taken.
+  printf '[Groups/0]\nName=Mine\n\n[Groups/1]\nName=sebtype\n' > "$b/20000101-000000/profile"; echo later > "$b/20000101-000000_2/profile"
   echo later > "$b/20000102-000000/profile"
   printf '[Hotkey]\nTriggerKeys=mine\n' > "$b/20000101-000000/config"
   echo sebtype > "$c/profile"
-  # An Fcitx5 that keeps its name; one whose process (a sleep, as its PID) outlives the name; and one already
-  # off the bus but still KWin's child.
+  # Nothing is put back, and the undo says so, for an Fcitx5 that keeps its name; one whose process (a sleep,
+  # as its PID) outlives the name; one already off the bus but still KWin's child; and that one with KWin's
+  # input method already cleared (no KWin restart to make).
   sleep 60 & sleeper=$!
   trap 'kill "$sleeper" 2>/dev/null; trap - RETURN' RETURN
-  for stop in fcitx-stays fcitx-pid kwin-child; do
-    if [[ $stop == fcitx-pid ]]; then echo "$sleeper" > "$fake/fcitx-pid"; else touch "$fake/$stop"; fi
-    [[ $stop == kwin-child ]] && touch "$fake/fcitx-down"
-    o=$(fake_run --undo-all < /dev/null) && { echo "$stop: succeeded"; return 1; }; echo "$o"
-    rm -f "$fake/$stop" "$fake/fcitx-down"
+  for stop in fcitx-stays fcitx-pid kwin-child kwin-cleared; do
+    case $stop in
+      fcitx-pid) echo "$sleeper" > "$fake/fcitx-pid" ;;
+      kwin-child) touch "$fake/kwin-child" "$fake/fcitx-down" ;;
+      kwin-cleared) touch "$fake/kwin-child"; kwriteconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod "" ;;
+      *) touch "$fake/$stop" ;;
+    esac
+    o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "$stop: succeeded"; return 1; }; echo "$o"
+    rm -f "$fake/$stop" "$fake/fcitx-down" "$fake/kwin-child"
+    kwriteconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod /usr/share/applications/org.fcitx.Fcitx5.desktop
     [[ $(cat "$c/profile") == sebtype && -d $b && -f $h/.local/share/fcitx5/addon/notificationitem.conf ]] &&
-      [[ $(kreadconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod) == /usr/share/applications/org.fcitx.Fcitx5.desktop ]] || return 1
+      grep -q "^error: Fcitx5 didn't .*: nothing put back" <<<"$o" && ! grep -q 'not all of' <<<"$o" || return 1
   done
   chmod 000 "$b/20000101-000000/config"
   o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a failed copy succeeded"; return 1; }; chmod 644 "$b/20000101-000000/config"; echo "$o"
   grep -q "^error: not all of Fcitx5's and Mozc's files went back" <<<"$o" && [[ -d $b ]] && ! grep -q 'changes are undone' <<<"$o" || return 1
+  # A folder where profile goes: the copy fails, not one into it.
+  rm "$c/profile"; mkdir "$c/profile"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a copy into the folder profile succeeded"; return 1; }; echo "$o"
+  [[ -z $(ls -A "$c/profile") ]] && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
+  rmdir "$c/profile"; echo sebtype > "$c/profile"
   # Run as bash setup-ime.sh, with no slash in its name, the undos still find it. The undos' advice to restart
   # Fcitx5 stays quiet, --undo-names' too (a name to undo again: the runs above undid them): --undo-all restarts it.
+  # Another account's Fcitx5 under KWin doesn't hold the undo up.
   printf '[InputMethod]\nName=日本語\n' > "$h/.local/share/fcitx5/inputmethod/mozc.conf"
-  o=$(setup_cmd='bash setup-ime.sh' fake_run --undo-all < /dev/null) || return 1; echo "$o"
+  touch "$fake/other-user"
+  o=$(setup_cmd='bash setup-ime.sh' fake_run --undo-all < /dev/null); s=$?; rm "$fake/other-user"
+  echo "$o"; ((s == 0)) || return 1
   ! grep -q 'Virtual Keyboard\|log in again' <<<"$o" &&
-  [[ $(cat "$c/profile") == $'[Groups/0]\nName=Mine' && $(cat "$c/config") == $'[Hotkey]\nTriggerKeys=mine' ]] &&
+  [[ $(cat "$c/profile") == $'[Groups/0]\nName=Mine\n\n[Groups/1]\nName=sebtype' && $(cat "$c/config") == $'[Hotkey]\nTriggerKeys=mine' ]] &&
     [[ $(wc -c < "$h/.config/mozc/config1.db") == 11 ]] && grep -qx 'TriggerKey=' "$c/conf/clipboard.conf" &&
     [[ ! -e $h/.local/share/fcitx5/addon/notificationitem.conf && ! -e $b ]] && ls -d "$b"-until-* &&
     [[ ! -e $h/.local/share/sebtype/configurator && ! -e $h/.local/share/fcitx5/inputmethod/mozc.conf && ! -e $h/.local/share/fcitx5/rime/sebtype-data.txt ]] &&
@@ -1881,6 +1897,17 @@ undo_all() {
   [[ $(cat "$c/profile") == current ]] && grep -q "^warning: no backup has Fcitx5's groups from before SebType" <<<"$o"
 }
 check undo-all undo_all
+# In a locale that sorts <time>_2/ before <time>/ (en_US: punctuation counts last), <time>/ is still the oldest:
+# fake_run's env -i would leave setup in the C locale.
+undo_all_locale() {
+  local b=$h/.local/share/sebtype/backup c=$h/.config/fcitx5 o
+  rm -rf "$b"; mkdir -p "$b/20000103-000000" "$b/20000103-000000_2"
+  echo first > "$b/20000103-000000/profile"; echo second > "$b/20000103-000000_2/profile"
+  o=$(setup_cmd='env LANG=en_US.UTF-8 ./setup-ime.sh' fake_run --undo-all < /dev/null) || return 1; echo "$o"
+  [[ $(cat "$c/profile") == first ]]
+}
+if locale -a 2>/dev/null | grep -qix 'en_US.utf-\?8'; then check undo-all-in-en-us-locale undo_all_locale
+else result SKIP undo-all-in-en-us-locale "needs the en_US.UTF-8 locale (glibc-langpack-en)"; fi
 
 # Setup with KWin set to Fcitx5 and no Fcitx5 on the bus restarts it under KWin and goes on; when KWin's input
 # method can't be set back, it says so and still finishes.

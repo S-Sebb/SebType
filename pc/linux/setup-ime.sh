@@ -55,11 +55,12 @@ kwin_reconfigure() {
   else busctl --user call org.kde.KWin /KWin org.kde.KWin reconfigure >/dev/null 2>&1 || true; fi
 }
 fcitx_on_dbus() { busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; }
+# An fcitx5 of this account that KWin started; another account's isn't this session's.
 fcitx_under_kwin() {
-  local ppid
-  while read -r ppid; do
-    [[ -n $ppid && $(ps -o comm= -p "$ppid" 2>/dev/null || true) == kwin_wayland ]] && return 0
-  done < <(ps -o ppid= -C fcitx5 2>/dev/null || true)
+  local uid ppid
+  while read -r uid ppid; do
+    [[ $uid == "$EUID" && -n $ppid && $(ps -o comm= -p "$ppid" 2>/dev/null || true) == kwin_wayland ]] && return 0
+  done < <(ps -o euid=,ppid= -C fcitx5 2>/dev/null || true)
   return 1
 }
 wait_fcitx_up() {
@@ -74,10 +75,15 @@ wait_fcitx_down() {
 }
 # The PID of the Fcitx5 that owns the session bus name, empty with none.
 fcitx_pid() { busctl --user status org.fcitx.Fcitx5 2>/dev/null | sed -n 's/^PID=//p' || true; }
-# Waits up to 10 s for process $1 to exit: an Fcitx5 that dropped its bus name may still be saving its groups.
-wait_pid_gone() {
+# Waits up to 10 s until Fcitx5 is gone: no bus name, no fcitx5 KWin started, and process $1 (the bus name's
+# owner before it was asked to quit, if there was one) exited. An Fcitx5 that dropped its name may still be
+# saving its groups over profile. The one rule for what may change profile.
+wait_fcitx_gone() {
   local i
-  for ((i = 0; i < 50; i++)); do [[ -e /proc/$1 ]] || return 0; sleep 0.2; done
+  for ((i = 0; i < 50; i++)); do
+    ! fcitx_on_dbus && ! fcitx_under_kwin && [[ -z ${1-} || ! -e /proc/$1 ]] && return 0
+    sleep 0.2
+  done
   return 1
 }
 # Only the Fcitx5 that owns the session bus name, the one setup configures and restarts: another Fcitx5 of
@@ -91,7 +97,7 @@ fcitx_has_deleted_libs() {
 kwin_set_im() { kwriteconfig6 --notify --file kwinrc --group Wayland --key InputMethod "$1" && kwin_reconfigure; }
 # Stops Fcitx5 under KWin and starts it again. A command given runs while it is stopped, which it must be for
 # that: fails, running nothing, if Fcitx5 doesn't stop (its process gone, not only its bus name), and fails if
-# the command does. With none it always succeeds.
+# the command does: with 2 when Fcitx5 didn't stop. With none it always succeeds.
 kwin_restart_fcitx5() {
   local s=0 pid
   pid=$(fcitx_pid)
@@ -109,8 +115,7 @@ kwin_restart_fcitx5() {
     trap 'exit 143' TERM
     kwin_set_im "" || true
     if (($#)); then
-      { wait_fcitx_down && { [[ -z $pid ]] || wait_pid_gone "$pid"; }; } ||
-        { echo "error: Fcitx5 didn't stop under KWin" >&2; exit 1; }
+      wait_fcitx_gone "$pid" || exit 2
       "$@" || exit 1
     else wait_fcitx_down || true; fi
     _restore_kwin_im
@@ -141,7 +146,9 @@ if ((undo_all)); then
     local b LC_ALL=C  # <time>/ before the Configurator's <time>_2/
     for b in "$backups"/*/"$1"; do
       [[ -f $b ]] || continue
-      [[ $1 == profile ]] && grep -qx 'Name=sebtype' "$b" && continue
+      # SebType's input method in a group's items, not a group named sebtype.
+      [[ $1 == profile ]] && awk '/^\[/ { item = /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ } item && $0 == "Name=sebtype" { found = 1 }
+        END { exit !found }' "$b" && continue
       echo "$b"; return
     done
   }
@@ -152,25 +159,27 @@ if ((undo_all)); then
       [[ -n $b ]] || continue
       echo "change: put back $f from $b"
       mkdir -p "${f%/*}" || return 1
-      cp -p "$b" "$f" || return 1
+      cp -pT "$b" "$f" || return 1  # -T: a folder there fails, not a copy into it
     done
     f=$data/fcitx5/addon/notificationitem.conf
     if grep -qx 'Library=sebtype' "$f" 2>/dev/null; then echo "change: remove SebType's tray $f"; rm "$f" || return 1; fi
   }
   failed="error: not all of Fcitx5's and Mozc's files went back: the backups stay in $backups"
   [[ -n $(oldest profile) ]] ||
-    warn "no backup has Fcitx5's groups from before SebType (setup up to 0.2.0 kept none): once SebType is removed, add Rime back in Fcitx 5 Configuration"
+    warn "no backup has Fcitx5's groups from before SebType (there were none, or setup up to 0.2.0 kept no copy): once SebType is removed, add Rime back in Fcitx 5 Configuration"
   if kwin_runs_fcitx; then
     echo "change: stop Fcitx5 under KWin while its files go back, then start it again"
-    kwin_restart_fcitx5 put_back || { echo "$failed" >&2; exit 1; }
+    kwin_restart_fcitx5 put_back || {
+      if (($? == 2)); then echo "error: Fcitx5 didn't stop under KWin: nothing put back" >&2; else echo "$failed" >&2; fi
+      exit 1
+    }
   else
+    pid=$(fcitx_pid)
     if fcitx_on_dbus; then
       echo "change: quit Fcitx5 while its files go back (it starts again at your next login)"
-      pid=$(fcitx_pid)
       busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Exit
-      { wait_fcitx_down && { [[ -z $pid ]] || wait_pid_gone "$pid"; }; } ||
-        { echo "error: Fcitx5 didn't quit: nothing put back" >&2; exit 1; }
     fi
+    wait_fcitx_gone "$pid" || { echo "error: Fcitx5 didn't quit: nothing put back" >&2; exit 1; }
     put_back || { echo "$failed" >&2; exit 1; }
   fi
   if [[ -d $backups ]]; then
