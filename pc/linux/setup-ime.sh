@@ -269,8 +269,12 @@ PY
     put_back || { echo "$failed" >&2; exit 1; }
   fi
   if [[ -d $backups ]]; then
-    echo "change: move $backups to $backups-until-${backup##*/}"
-    mv "$backups" "$backups-until-${backup##*/}"
+    # <time>_2 for a second undo within the same second, as the Configurator names its backups.
+    to=$backups-until-${backup##*/} i=1
+    while [[ -e $to${i#1} ]]; do i=_$((${i#_} + 1)); done
+    to+=${i#1}
+    echo "change: move $backups to $to"
+    mv -T "$backups" "$to"
   fi
   echo "SebType's changes are undone: remove it with 'sudo dnf remove sebtype'"
   exit 0

@@ -1907,11 +1907,13 @@ undo_all() {
   printf '[Groups/0]\nName=Default\n\n[Groups/0/Items/0]\nName=sebtype\n\n[GroupOrder]\n0=Default\n' > "$c/profile"
   o=$(fake_run --undo-all < /dev/null) || return 1; echo "$o"
   [[ ! -e $c/profile ]] || return 1
-  # A profile without SebType in it stays byte for byte, whatever a backup holds.
+  # A profile without SebType in it stays byte for byte, whatever a backup holds. Each undo's backups move
+  # to a folder of their own, also within the same second.
   mkdir -p "$b/20000101-000000"; printf '[Groups/0]\nName=Old\n' > "$b/20000101-000000/profile"
   printf '# mine\n[Groups/0]\nName=sebtype\n\n\n[Groups/0/Items/0]\nName=keyboard-us\nName = sebtype' > "$c/profile"; cp "$c/profile" "$fake/profile-before"
   o=$(fake_run --undo-all < /dev/null) || return 1; echo "$o"
-  cmp "$c/profile" "$fake/profile-before" && ! grep -q "warning: no backup has" <<<"$o"
+  cmp "$c/profile" "$fake/profile-before" && ! grep -q "warning: no backup has" <<<"$o" &&
+    [[ $(find "$b"-until-* -maxdepth 0 | wc -l) == 3 ]]
 }
 check undo-all undo_all
 # In a locale that sorts <time>_2/ before <time>/ (en_US: punctuation counts last), <time>/ is still the oldest:

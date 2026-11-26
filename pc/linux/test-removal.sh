@@ -60,7 +60,7 @@ check install-and-setup "sudo dnf install -y $rpm
 up; groups; [[ $(groups | head -1) == "Default: sebtype" ]] && ls ~/.local/share/fcitx5/addon/notificationitem.conf && ! rpm -q kcm-fcitx5'
 check added-after-setup 'call AddInputMethodGroup s Later; call SetInputMethodGroupInfo "ssa(ss)" Later us 1 keyboard-us ""
 call SetInputMethodGroupInfo "ssa(ss)" Default us 2 sebtype "" keyboard-fr ""; call Save
-groups; groups | grep -qx "Later: keyboard-us" && groups | grep -qx "Default: sebtype keyboard-fr"'
+g=$(groups); echo "$g"; grep -qx "Later: keyboard-us" <<<"$g" && grep -qx "Default: sebtype keyboard-fr" <<<"$g"'
 check undo-all 'o=$(sebtype-setup --undo-all < /dev/null) || { echo "$o"; exit 1; }; echo "$o"; up; groups
 grep -q "^change: stop Fcitx5 under KWin" <<<"$o" && [[ $(groups) == "$want" ]] && rpm -q kcm-fcitx5 fcitx5-configtool &&
   [[ ! -e ~/.local/share/fcitx5/addon/notificationitem.conf && ! -e ~/.local/share/sebtype/configurator ]] &&
