@@ -181,7 +181,7 @@ if ((undo_configurator)); then
     # A sync planned after the network changed, and a --network-changed waiting for the lock.
     systemctl --user stop sebtype-sync-soon.timer sebtype-sync-network.service 2>/dev/null || true  # fails for one not there
     rm -f "$sync_units"/sebtype-sync.{timer,path,service} "$sync_units"/sebtype-sync-network.service
-    systemctl --user daemon-reload 2>/dev/null
+    systemctl --user daemon-reload 2>/dev/null || true  # no systemd user instance (a container)
   fi
   if [[ -f $data/sebtype/sync.json ]] && command -v secret-tool >/dev/null; then
     echo "change: remove SebType's sync login from the keyring"
@@ -193,7 +193,7 @@ if ((undo_configurator)); then
     systemctl --user disable --now sebtype-update.timer 2>/dev/null || true
     systemctl --user stop sebtype-update.service 2>/dev/null || true
     rm -f "$sync_units"/sebtype-update.{timer,service}
-    systemctl --user daemon-reload 2>/dev/null
+    systemctl --user daemon-reload 2>/dev/null || true  # no systemd user instance (a container)
   fi
   for updates in "${XDG_RUNTIME_DIR:-/nonexistent}/sebtype-updates" "${XDG_CACHE_HOME:-$HOME/.cache}/sebtype-updates"; do
     [[ -d $updates ]] && { echo "change: remove $updates"; rm -r "$updates"; }
