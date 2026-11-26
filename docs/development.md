@@ -169,6 +169,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/mozc-dictionary.sh` | The phone's Japanese dictionary, built from `engines/mozc` and loaded into the PCs' Mozc: the candidates for the words in `android/test/mozc-words.tsv` (#335) |
 | `tools/test-hf-fetch.sh` | `tools/hf-fetch.sh` offline: a made-up token stays out of a `bash -x` trace and goes to the Hugging Face endpoint, not to the host it redirects to (#365) |
 | `tools/check-downloads.py` (`--self-test`: its own cases) | Every `curl` and `wget` download is capped at 300 Mbit/s, and no script uses `Invoke-WebRequest` (#365); CI runs it on every PR |
+| `tools/test-build.sh` | `tools/build.sh`'s container finds the checkout's git repository from a worktree and from a main checkout (#608) |
 | `tools/test-mozc-downloads.sh` | Mozc's capped prefetch, offline: a changed pinned digest, or a cached file that is corrupt, replaced or deleted, is fetched again, two builds can prefetch at once, and the list's generator takes the module version Bazel selected (#335) |
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |

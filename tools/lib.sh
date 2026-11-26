@@ -58,7 +58,8 @@ JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | ta
 # librime and OpenCC for the Chinese data, gcc for Bazel's host tools, Rust and fontconfig for the
 # Configurator, python, git for llama.cpp's pinned checkout (engines/sebtype-lm/fetch-llama.sh). It runs as
 # tony with an empty home (Java takes it from the user, not HOME), its CPUs and memory capped, the scratch
-# folders where they are (under both their paths), CACHE, and the checkout at its own (physical) path.
+# folders where they are (under both their paths), CACHE, and the checkout at its own (physical) path, with
+# its git folder.
 # Elsewhere, to nothing: the build runs on the host.
 fedora_container() {
   container=()
@@ -78,6 +79,10 @@ RUN dnf -y --setopt=throttle=35M install $rpms && dnf clean all" >/dev/null
     nas=$(readlink -f "$d")
     for d in "$d" "$nas"; do [[ " ${mounts[*]} " == *":$d "* ]] || mounts+=(-v "$nas:$d"); done
   done
+  # A worktree's .git names a folder in the main checkout's .git, which git needs too (#608).
+  d=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)
+  d=$(cd "$d" && pwd -P)
+  [[ $d == "$root"/* ]] || mounts+=(-v "$d:$d")
   container=(podman run --rm --env-host --userns=keep-id --tmpfs "$HOME:rw,U"
     --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g"
     "${mounts[@]}" -v "$CACHE:$CACHE" -v "$root:$root" "$@" "$image")
