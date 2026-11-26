@@ -45,7 +45,7 @@ def items(dev, name):
         d = dump[i]
         words = [
             tuple([d[k]] + [float(x) for x in d[k + 1 : k + 4]])
-            for k in range(4, len(d), 5)
+            for k in range(5, len(d), 6)  # sebtype.cpp's columns
         ]
         out.append((typed, target, d[2] == "1", float(d[3]), words))
         i += 1
@@ -182,6 +182,10 @@ def main(dev):
             r.split("\t")[2]
             for r in (dev / f"out/sebtype.{name}.tsv").read_text().splitlines()
         ]
+        if len(harness) != len(
+            its
+        ):  # zip() would drop the rest: empty results gave GAIN 100.00 (#568)
+            sys.exit(f"{name}: {len(its)} dev items but {len(harness)} harness results")
         differ += [
             (name, it[0], c, h)
             for it, h in zip(its, harness)

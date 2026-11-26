@@ -486,7 +486,7 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
 std::vector<float> Model::score(const std::string &context, const std::string &typed,
                                 const std::vector<std::string> &words, bool typedIsWord,
                                 std::vector<float> *asTyped, bool typedKept, float *typedEnd,
-                                std::vector<float> *pieceScores) {
+                                PieceScores *pieceScores) {
     // Letters typed in capitals are read in small letters, as the model knows words best, and so is the text
     // before when its last word is in capitals too: "I FEEL ILL" as "i feel ill", "I SAID WHATS" as "i said
     // whats". Read in capitals the model hardly knows a contraction (WHAT'S), and with ill in small letters
@@ -644,7 +644,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
             if (t.token < 0 && i + 1 == words.size()) end = it->second.end;
         }
     if (typedEnd) *typedEnd = end;
-    if (pieceScores) *pieceScores = own;
+    if (pieceScores) *pieceScores = {prefix, spelt, own};
     const std::vector<float> hinted = out;
     if (asTyped) asTyped->assign(hinted.begin(), hinted.begin() + words.size());
     // One share for all of them: shared pair by pair, the typed word and the same word in other capitals

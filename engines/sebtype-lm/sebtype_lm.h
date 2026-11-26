@@ -18,6 +18,15 @@ struct Word {
     float logProb;
 };
 
+// What Model::score() read each word's pieces from, for tools/english-lm/parity.py to read the same tokens
+// with the checkpoint (#609): the prompt up to the hint's <S>, and per word its pieces and their log
+// probabilities summed, without its ending or a share.
+struct PieceScores {
+    std::vector<int> prompt;
+    std::vector<std::vector<int>> pieces;
+    std::vector<float> logProbs;
+};
+
 class Model {
 public:
     // Loads the GGUF model at PATH; the model runs on THREADS threads.
@@ -38,12 +47,11 @@ public:
     // hint, as all but a contraction of them are read, before that contraction and TYPED share their odds.
     // TYPED_KEPT: TYPED stays whatever it scores (a learned word), so where it ends isn't read unless a
     // contraction shares with it. TYPED_END, if given: the part of TYPED's score that is its ending there.
-    // PIECE_SCORES, if given: each word's pieces' log probabilities after the hint, summed, without its ending or a
-    // share: what the checkpoint gives for the same tokens (tools/english-lm/parity.py, #609).
+    // PIECE_SCORES, if given: the tokens each word was read from and their raw scores.
     std::vector<float> score(const std::string &context, const std::string &typed,
                              const std::vector<std::string> &words, bool typedIsWord,
                              std::vector<float> *asTyped = nullptr, bool typedKept = false,
-                             float *typedEnd = nullptr, std::vector<float> *pieceScores = nullptr);
+                             float *typedEnd = nullptr, PieceScores *pieceScores = nullptr);
 
     // The part of CONTEXT both read: its last line, the last 150 to 300 characters of it from a word's start,
     // starting where the last call's window started while that leaves 150 to 300 characters (#359).
