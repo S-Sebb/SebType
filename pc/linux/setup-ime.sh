@@ -147,16 +147,18 @@ if ((undo_all)); then
     for b in "$backups"/*/"$1"; do [[ -f $b ]] && { echo "$b"; return; }; done
   }
   # The current profile, not a backup (#611): groups and input methods added since setup stay. SebType's
-  # items (Name=sebtype in a [Groups/N/Items/M]) go; in their place what setup took out of that group
-  # (keyboard-us, rime, mozc) and its default input method, from the oldest backup that has the group, by
-  # name, without SebType in it (setup up to 0.2.0 kept no profile, so the Configurator's Use SebType or a
-  # rerun of setup could save one SebType had changed). A group with nothing left goes; with none left the
-  # profile goes, and Fcitx5 makes its own group as it starts. Written to a file beside it and renamed over
-  # it, so a failed write leaves it whole. A profile it can't read fails; one without SebType stays as it is.
+  # items (Name=sebtype in a [Groups/N/Items/M]) go; in their place what setup or the Configurator's Use
+  # SebType took out of that group (keyboard-us, rime, mozc) and its default input method, from the newest
+  # backup that has the group, by name, without SebType in it: the group just before SebType entered it.
+  # Only setup's own group goes when nothing is left in it: Default, made when there was no profile to back
+  # up. Any other group with nothing left keeps its place with the keyboard of its Default Layout. With no
+  # group left the profile goes, and Fcitx5 makes its own as it starts. Written to a new file beside it and
+  # renamed over it, so a failed write leaves it whole. A profile it can't read fails; one without SebType
+  # stays as it is.
   undo_profile() {
     local LC_ALL=C
     python3 - "$config/fcitx5/profile" "$backups"/*/profile <<'PY'
-import os, re, sys
+import os, re, sys, tempfile
 
 def sections(text):
     out, cur = [], None
@@ -189,16 +191,18 @@ current = groups(secs)
 if not any(kv(i).get('Name') == 'sebtype' for _, items in current for i in items):
     sys.exit()
 
-# Each group's state before SebType: the oldest backup with it and no SebType in it.
+# Each group's state just before SebType: the newest backup (they come oldest first) with it and no SebType
+# in it. With no backup of profile at all, setup made the profile, and its group Default.
+backups = [b for b in sys.argv[2:] if os.path.isfile(b)]
 before = {}
-for b in sys.argv[2:]:
+for b in backups:
     try:
         old = groups(sections(open(b, encoding='utf-8').read()))
     except (OSError, UnicodeDecodeError):
         continue
     for lines, items in old:
         name = kv(lines).get('Name')
-        if name not in before and all(kv(i).get('Name') != 'sebtype' for i in items):
+        if all(kv(i).get('Name') != 'sebtype' for i in items):
             before[name] = (lines, items)
 
 kept, dropped, missing = [], set(), []
@@ -206,7 +210,8 @@ for lines, items in current:
     name = kv(lines).get('Name')
     names = [kv(i).get('Name') for i in items]
     if 'sebtype' in names:
-        if name not in before:
+        setups = not backups and name == 'Default'
+        if name not in before and not setups:
             missing.append(name)
         old_lines, old_items = before.get(name, ([], []))
         back = [i for i in old_items if kv(i).get('Name') in ('keyboard-us', 'rime', 'mozc') and kv(i).get('Name') not in names]
@@ -214,9 +219,12 @@ for lines, items in current:
         items = [i for i, im in zip(items, names) if im != 'sebtype']
         items = items[:at] + back + items[at:]
         names = [kv(i).get('Name') for i in items]
-        if not items:
+        if not items and setups:
             dropped.add(name)
             continue
+        if not items:
+            items = [[f"Name=keyboard-{kv(lines).get('Default Layout') or 'us'}", 'Layout=']]
+            names = [kv(items[0])['Name']]
         if kv(lines).get('DefaultIM') == 'sebtype':
             default = kv(old_lines).get('DefaultIM')
             default = default if default in names else names[0]
@@ -225,9 +233,10 @@ for lines, items in current:
 
 for name in missing:
     print(f'warning: no backup has Fcitx5 group "{name}" from before SebType (setup up to 0.2.0 kept no copy, '
-          'or it was renamed since): once SebType is removed, add Rime back to it in Fcitx 5 Configuration')
+          'or it was renamed since): if it had Rime, add Rime back to it in Fcitx 5 Configuration once SebType '
+          'is removed')
 if not kept:
-    print(f"change: remove {path}, whose groups had only SebType's input method")
+    print(f"change: remove {path}, whose one group was setup's, with only SebType's input method")
     os.remove(path)
     sys.exit()
 out = []
@@ -243,10 +252,15 @@ for name, lines in secs:
         continue
     out += [f'[{name}]', *lines, '']
 print(f"change: take SebType's input method out of the groups in {path}")
-tmp = path + '.sebtype-undo'
-with open(tmp, 'w', encoding='utf-8') as f:
-    f.write('\n'.join(out).rstrip('\n') + '\n')
-os.replace(tmp, path)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.profile.')
+try:
+    os.chmod(fd, os.stat(path).st_mode & 0o7777)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(out).rstrip('\n') + '\n')
+    os.replace(tmp, path)
+except BaseException:
+    os.unlink(tmp)
+    raise
 PY
   }
   put_back() {
