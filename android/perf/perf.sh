@@ -20,7 +20,6 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
-test_key || { echo "preflight: no test key for the release build (tools/lib.sh test_key)"; exit 1; }
 self=$PWD/android/perf/perf.sh
 
 export out=${PERF_OUT:-$TASK_OUT/perf}; export work=$out/run
@@ -534,6 +533,7 @@ if [[ $mode == --soak-device ]]; then # SebType as installed by the last run
   cat "$results"; ! grep -q '^FAIL' "$results"; exit
 fi
 if [[ -z ${APK:-} ]]; then
+  test_key || exit 1
   APK=$(android/build.sh release 2> "$work/build.log" | tail -1)
   [[ -f $APK ]] || { echo "preflight: release build failed, see $work/build.log"; exit 1; }
 fi

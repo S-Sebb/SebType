@@ -110,13 +110,13 @@ same_release() {
 export -f same_apk entries same_release
 check release-same-in-two-checkouts same_release
 
-# Two releases signed here, from the two checkouts (#229), where the release key is.
+# Two releases signed here, from the two checkouts (#229), with the release key or the machine's test key.
 same_signed() {
   local a b
   a=$(android/build.sh release) && b=$(cd "$wt" && android/build.sh release) && same_apk "$a" "$b"
 }
 export -f same_signed
-if [[ -f ${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/sebtype-release.jks ]]; then check release-signed-same same_signed
-else result SKIP release-signed-same "no release key on $(uname -n)"; fi
+if test_key > "$out/test-key.log"; then check release-signed-same same_signed
+else result FAIL release-signed-same "$(sed 's/^preflight: //' "$out/test-key.log")"; fi
 
 ! grep -q '^FAIL' "$results"

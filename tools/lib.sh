@@ -99,19 +99,25 @@ sccache_env() {
 # Decisions #2), SEBTYPE_KEY_DIR points at this machine's test key, CN=SebType test key, in the tests'
 # cache: made once, renamed into place whole so runs at the same time keep whichever got there first, and
 # never deleted, since parallel runs sign with it (#603). android/release.sh doesn't call it and refuses
-# that key.
+# that key. A key is its keystore and its password file. Prints the caller's preflight line when it fails.
 test_key() {
-  [[ -f ${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/sebtype-release.jks ]] && return
+  local dir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype} tmp
+  [[ -f $dir/sebtype-release.jks && -f $dir/keystore.password ]] && return
   export SEBTYPE_KEY_DIR=$SCRATCH/cache/test-key
-  [[ -f $SEBTYPE_KEY_DIR/sebtype-release.jks ]] && return
-  [[ -x $JDK21/bin/keytool || $SEBTYPE_HOST != yanglab16* ]] || "$(dirname "${BASH_SOURCE[0]}")/android-tools.sh"
-  local tmp; mkdir -p "$SCRATCH/cache" && tmp=$(mktemp -d "$SCRATCH/cache/test-key.XXXXXX") || return
-  head -c 24 /dev/urandom | base64 > "$tmp/keystore.password"
-  "$JDK21/bin/keytool" -genkeypair -keystore "$tmp/sebtype-release.jks" -storetype PKCS12 -alias sebtype \
-    -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=SebType test key" \
-    -storepass:file "$tmp/keystore.password" > "$tmp/keytool.log" 2>&1 ||
-    { echo "test_key: keytool failed, see $tmp/keytool.log" >&2; return 1; }
-  mv -T "$tmp" "$SEBTYPE_KEY_DIR" 2>/dev/null || rm -rf "$tmp"
+  if [[ ! -f $SEBTYPE_KEY_DIR/sebtype-release.jks || ! -f $SEBTYPE_KEY_DIR/keystore.password ]]; then
+    [[ -x $JDK21/bin/keytool || $SEBTYPE_HOST != yanglab16* ]] || "$(dirname "${BASH_SOURCE[0]}")/android-tools.sh" >&2
+    mkdir -p "$SCRATCH/cache" && tmp=$(mktemp -d "$SCRATCH/cache/test-key.XXXXXX") ||
+      { echo "preflight: can't make a test key in $SCRATCH/cache"; return 1; }
+    head -c 24 /dev/urandom | base64 > "$tmp/keystore.password"
+    "$JDK21/bin/keytool" -genkeypair -keystore "$tmp/sebtype-release.jks" -storetype PKCS12 -alias sebtype \
+      -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=SebType test key" \
+      -storepass:file "$tmp/keystore.password" > "$tmp/keytool.log" 2>&1 ||
+      { echo "preflight: keytool couldn't make the test key, see $tmp/keytool.log"; return 1; }
+    # Another run's key, already in place, stays.
+    mv -T "$tmp" "$SEBTYPE_KEY_DIR" 2>/dev/null || rm -rf "$tmp"
+  fi
+  [[ -f $SEBTYPE_KEY_DIR/sebtype-release.jks && -f $SEBTYPE_KEY_DIR/keystore.password ]] ||
+    { echo "preflight: $SEBTYPE_KEY_DIR isn't a test key (a keystore and keystore.password); move it aside"; return 1; }
 }
 
 # build_lock MINUTES NAME CMD...: runs CMD in the shared build lock (one heavy SebType build at a time),

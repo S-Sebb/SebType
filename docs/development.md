@@ -45,10 +45,11 @@ user. `BAZEL_CACHE=<folder on a local disk>` names another, for a cold-cache bui
 
 A release APK is built unsigned and signed with `apksigner` (scheme v2 alone, RSA), so two builds of a
 commit are the same file. The key is only on nobara-pc, so a release is built there; elsewhere
-`SEBTYPE_UNSIGNED=1` builds one unsigned. The test scripts that build a release (`android/test/emulator.sh`,
-`privacy.sh` and the others) sign it there with the machine's own test key, `CN=SebType test key`, which
-`tools/lib.sh`'s `test_key` makes once in the tests' cache (`scratch/cache/test-key`) and every run shares:
-don't make keys by hand or delete that one. `android/release.sh` refuses an APK signed with it.
+`SEBTYPE_UNSIGNED=1` builds one unsigned. On a machine without the real key, the test scripts that build a
+release (`android/test/emulator.sh`, `privacy.sh` and the others) sign it with that machine's own test key,
+`CN=SebType test key`, which `tools/lib.sh`'s `test_key` makes once in the tests' cache
+(`scratch/cache/test-key`) and every run shares: don't make keys by hand or delete that one.
+`android/release.sh` publishes only an APK whose signer's certificate is the release key's (by SHA-256).
 
 Test scripts build through `tools/build.sh MINUTES NAME SCRIPT`, which runs SCRIPT in the build lock (on
 yanglab16 in that Fedora container) and prints the files it made: the Configurator and its unit tests'

@@ -9,7 +9,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
-test_key || { echo "preflight: no test key for the release build (tools/lib.sh test_key)"; exit 1; }
+test_key || exit 1
 
 out=$TASK_OUT/test-incognito-phone; rm -rf "$out"; mkdir -p "$out"
 results=$out/results.txt; : > "$results"

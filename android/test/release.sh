@@ -7,7 +7,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
-test_key || { echo "preflight: no test key for the release build (tools/lib.sh test_key)"; exit 1; }
+test_key || exit 1
 repo=$PWD out=$TASK_OUT; mkdir -p "$out"
 fails=0
 result() { echo "$1 $2${3:+: $3}"; [[ $1 != FAIL ]] || fails=$((fails + 1)); }
