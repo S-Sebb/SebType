@@ -3,7 +3,8 @@
 # Mozc, #190) in every app on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-all, run before
-# `dnf remove sebtype`, undoes it all, the account's Fcitx5 groups and keys included. --undo-librime puts Fedora's
+# `dnf remove sebtype`, undoes it all, the account's Fcitx5 groups and keys included (groups and input methods
+# added since stay). --undo-librime puts Fedora's
 # librime back where SebType 0.2.0 or older installed its own build in its place. --undo-fcitx5 puts back Fcitx5's own settings (kcm-fcitx5,
 # fcitx5-configtool).
 # --undo-configurator removes the SebType Configurator app
@@ -130,9 +131,10 @@ kwin_runs_fcitx() {
 }
 
 # --undo-all (#582), before `dnf remove sebtype`: the undos below, then, with Fcitx5 stopped (it writes its
-# groups over profile as it quits), Fcitx5's and Mozc's files back from the oldest backup that has each (later
-# ones hold files SebType had already changed) and Fcitx5's own tray. A file no backup has stays: it was new
-# with setup or already as setup wanted it. The backups move aside, so a later install's oldest are its own.
+# groups over profile as it quits), SebType taken out of Fcitx5's groups, Fcitx5's other files and Mozc's back
+# from the oldest backup that has each (later ones hold files SebType had already changed) and Fcitx5's own
+# tray. A file no backup has stays: it was new with setup or already as setup wanted it. The backups move
+# aside, so a later install's oldest are its own.
 # fcitx5-rime's Rime stays in the groups while SebType is installed, so Fcitx5 starts again at once.
 if ((undo_all)); then
   # Their advice to restart Fcitx5 stays quiet: this restarts it.
@@ -146,15 +148,98 @@ if ((undo_all)); then
     local b LC_ALL=C  # <time>/ before the Configurator's <time>_2/
     for b in "$backups"/*/"$1"; do
       [[ -f $b ]] || continue
-      # SebType's input method in a group's items, not a group named sebtype.
-      [[ $1 == profile ]] && awk '/^\[/ { item = /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ } item && $0 == "Name=sebtype" { found = 1 }
-        END { exit !found }' "$b" && continue
+      [[ $1 == profile ]] && has_sebtype "$b" && continue
       echo "$b"; return
     done
   }
+  # A profile with SebType's input method in a group's items, not only a group named sebtype.
+  has_sebtype() { awk '/^\[/ { item = /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ } item && $0 == "Name=sebtype" { found = 1 }
+    END { exit !found }' "$1" 2>/dev/null; }
+  # The current profile, not the backup (#611): groups and input methods added since setup stay. SebType's
+  # items go; in their place what setup took out of that group (keyboard-us, rime, mozc), as the oldest backup
+  # has them, and the backup's default input method. A group left empty was SebType's alone and goes; with
+  # none left the profile goes, and Fcitx5 makes its own group as it starts.
+  # Prints profile $1 so, with $2 the oldest backup's (or none); exits 3 when no group is left.
+  without_sebtype() {
+    python3 - "$1" "$2" <<'PY'
+import re, sys
+
+def sections(path):
+    out, cur = [], None
+    for raw in (open(path, encoding='utf-8').read().splitlines() if path else []):
+        s = raw.strip()
+        if s.startswith('[') and s.endswith(']'):
+            cur = [s[1:-1], []]
+            out.append(cur)
+        elif cur and s:
+            cur[1].append(raw)
+    return out
+
+def kv(lines):
+    return [tuple(l.split('=', 1)) for l in lines if '=' in l]
+
+def groups(secs):  # {number: [group lines, {item number: item lines}]}
+    g = {}
+    for name, lines in secs:
+        if m := re.fullmatch(r'Groups/(\d+)', name):
+            g.setdefault(int(m[1]), [[], {}])[0] = lines
+        elif m := re.fullmatch(r'Groups/(\d+)/Items/(\d+)', name):
+            g.setdefault(int(m[1]), [[], {}])[1][int(m[2])] = lines
+    return g
+
+secs = sections(sys.argv[1])
+before = {dict(kv(lines)).get('Name'): (lines, items) for lines, items in groups(sections(sys.argv[2])).values()}
+kept, dropped = [], set()
+for n, (lines, items) in sorted(groups(secs).items()):
+    items = [items[i] for i in sorted(items)]
+    name = dict(kv(lines)).get('Name')
+    names = [dict(kv(i)).get('Name') for i in items]
+    if 'sebtype' in names:
+        old_lines, old_items = before.get(name, ([], {}))
+        back = [i for _, i in sorted(old_items.items())
+                if dict(kv(i)).get('Name') in ('keyboard-us', 'rime', 'mozc') and dict(kv(i)).get('Name') not in names]
+        at = names.index('sebtype')
+        items = [i for i, im in zip(items, names) if im != 'sebtype']
+        items = items[:at] + back + items[at:]
+        names = [dict(kv(i)).get('Name') for i in items]
+        if not items:
+            dropped.add(name)
+            continue
+        if dict(kv(lines)).get('DefaultIM') == 'sebtype':
+            default = dict(kv(old_lines)).get('DefaultIM')
+            default = default if default in names else names[0]
+            lines = [f'DefaultIM={default}' if l.split('=', 1) == ['DefaultIM', 'sebtype'] else l for l in lines]
+    kept.append((lines, items))
+if not kept:
+    sys.exit(3)
+out = []
+for g, (lines, items) in enumerate(kept):
+    out += [f'[Groups/{g}]', *lines, '']
+    for i, item in enumerate(items):
+        out += [f'[Groups/{g}/Items/{i}]', *item, '']
+for name, lines in secs:
+    if name == 'GroupOrder':
+        order = [v for k, v in sorted(kv(lines), key=lambda kv: int(kv[0])) if v not in dropped]
+        lines = [f'{k}={v}' for k, v in enumerate(order)]
+    elif re.fullmatch(r'Groups/\d+(/Items/\d+)?', name):
+        continue
+    out += [f'[{name}]', *lines, '']
+print('\n'.join(out).rstrip('\n'))
+PY
+  }
+  undo_profile() {
+    local f=$config/fcitx5/profile want s=0
+    has_sebtype "$f" || return 0
+    want=$(without_sebtype "$f" "$(oldest profile)") || s=$?
+    if ((s == 3)); then echo "change: remove $f, which had only SebType's group"; rm "$f"; return; fi
+    ((s == 0)) || return 1
+    echo "change: take SebType's input method out of the groups in $f"
+    printf '%s\n' "$want" > "$f"
+  }
   put_back() {
     local f b
-    for f in "$config/fcitx5/"{profile,config} "$config/fcitx5/conf/"{clipboard,unicode,quickphrase}.conf "$mozc/config1.db"; do
+    undo_profile || return 1
+    for f in "$config/fcitx5/config" "$config/fcitx5/conf/"{clipboard,unicode,quickphrase}.conf "$mozc/config1.db"; do
       b=$(oldest "${f##*/}")
       [[ -n $b ]] || continue
       echo "change: put back $f from $b"
@@ -165,8 +250,9 @@ if ((undo_all)); then
     if grep -qx 'Library=sebtype' "$f" 2>/dev/null; then echo "change: remove SebType's tray $f"; rm "$f" || return 1; fi
   }
   failed="error: not all of Fcitx5's and Mozc's files went back: the backups stay in $backups"
-  [[ -n $(oldest profile) ]] ||
+  if has_sebtype "$config/fcitx5/profile" && [[ -z $(oldest profile) ]]; then
     warn "no backup has Fcitx5's groups from before SebType (there were none, or setup up to 0.2.0 kept no copy): once SebType is removed, add Rime back in Fcitx 5 Configuration"
+  fi
   if kwin_runs_fcitx; then
     echo "change: stop Fcitx5 under KWin while its files go back, then start it again"
     kwin_restart_fcitx5 put_back || {
