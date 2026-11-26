@@ -127,24 +127,6 @@ check(
     texting.text("so what's up, I can't", True, False),
 )
 check(
-    "homographs: a contraction's letters, not a possessive's",
-    {"cant", "wont", "ill", "id", "were", "whats"} <= pack.homograph
-    and not {"states", "girls"} & pack.homograph,
-)
-pack.HINT = 0
-got = [written(f"so {w} and", seed=k) for w in ("id", "I'd") for k in range(200)]
-pack.HINT = 1.0
-bare, full = sum(map(len, got[:200])), sum(map(len, got[200:]))
-check(
-    "examples: a homograph's letters get one more often, its contraction too",
-    70 < bare < 130 and 70 < full < 130,
-    (bare, full),
-)
-short = (
-    sum(pack.typed_for(rng, "work", prefix=True) == "wor" for _ in range(20000)) / 20000
-)
-check("typed_for: one letter short a third of prefixes or more", short > 0.02, short)
-check(
     "examples: a word after a quote",
     "Hello" in " ".join(written('He said "Hello there"')),
     written('He said "Hello there"'),

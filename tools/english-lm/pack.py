@@ -12,15 +12,11 @@ line.
 
 A correction example sits in the text in front of a word: <T>, the letters typed for it, <S>, then the word as
 it is written, as the phone scores a candidate: its own pieces, with a space in front. HINT (5 %) of the words
-get one, wherever they stand (after a quote or a bracket too), and HOMOGRAPH_HINT (50 %) of the words typed
-as both a contraction's letters and a word (can't and cant, I'd and id: homographs()), so the model learns
-from the text around them which is meant; at 5 % it had seen the noun cant about 30 times and read "such
-cant" as can't. The typed letters are lowercase:
+get one, wherever they stand (after a quote or a bracket too). The typed letters are lowercase:
 - 40 %: the word itself, so a correctly typed word is kept;
 - 35 %: a phone typo from the bank (noise.py), 15 %: a spelling mistake from it (a phone typo for a word too
   short for one), made on the spot for a word the bank lacks;
-- 10 %: the first letters only, correct or not, so the model also completes words; half of them one letter
-  short ("wor" for work), the commonest place a word is still being typed, the rest of any length.
+- 10 %: the first letters only, correct or not, so the model also completes words.
 A contraction is typed without its apostrophe (APOSTROPHE_TYPED of the time with it): it isn't on the phone's
 letter layer. TWO_WORDS of the examples span two words typed as one, the space missed or slipped onto a letter
 above it ("couldbe", "ofvthe"), so the typed letters count against a two-word candidate as against one word.
@@ -32,11 +28,11 @@ SebType's loader writes the same example for each candidate and reads its probab
 
 Texting style (#266): TEXTING of the chat sources' lines are written as people text: sentences start in
 lowercase, "I" is often written small, a final full stop goes, and common words take
-their short forms ("u", "ur", "pls", "gonna"). Some people leave out apostrophes too, but only where they
+their short forms ("u", "ur", "pls", "gonna"). Some leave out apostrophes too, but only in the letters they
 type: their examples' letters have none, while the text keeps its own. The text is what the model learns to
-predict, and with them left out there it read "so whats" as likely as "so what's", and the share of the
-contraction's odds (engines/sebtype-lm) kept whats (#561). nus-sms's real messages still give it texted
-contexts without them. The real messages in nus-sms show the model the true mix; this
+predict, and with them left out there r4 read "so whats" as likely as "so what's" (5.03 and 5.07 nats), so
+the contraction's share of the odds (engines/sebtype-lm) kept whats; a fine-tune on this put what's 3.9 nats
+ahead (#561). The real messages in nus-sms show the model the true mix, apostrophes left out too; this
 gives it texting contexts from the much larger chat it already has. TEXTING was chosen on the dev sets
 (dev_sets.py's next-texts and text-typos); the optional arguments set it and scale the mix down for short
 trials:
@@ -92,7 +88,6 @@ MIX = {
     "tatoeba": 1.752,
 }
 HINT = 0.05
-HOMOGRAPH_HINT = 0.5
 TWO_WORDS = 0.05
 APOSTROPHE_TYPED = 0.15
 CONTEXT_CHARS = 300
@@ -153,7 +148,7 @@ I_FORMS = {"i": "I", "i'm": "I'm", "i've": "I've", "i'll": "I'll", "i'd": "I'd"}
 # Letters above the space bar: a space aimed at between two words that lands on one.
 ABOVE_SPACE = "xcvbnm"
 
-sp = bank = letter = homograph = None
+sp = bank = letter = None
 T = S = NEWLINE = None
 intended = real_word = None
 commonest = {}
@@ -161,7 +156,7 @@ commonest = {}
 
 def init(run, typos=True):
     """Each worker's tokenizer, typo bank (TYPOS: RUN_DIR's, else an empty one) and dictionary."""
-    global sp, bank, letter, T, S, NEWLINE, intended, real_word, homograph
+    global sp, bank, letter, T, S, NEWLINE, intended, real_word
     sp = spm.SentencePieceProcessor(model_file=str(Path(run) / "data/tokenizer.model"))
     T, S = sp.piece_to_id("<T>"), sp.piece_to_id("<S>")
     NEWLINE = sp.encode("\n")
@@ -176,27 +171,10 @@ def init(run, typos=True):
     # A word in any of its dictionary cases: "thomas" isn't "thoma's" (Thomas), nor "americans" "american's".
     real = {w.lower() for w, v in words.items() if not v[1]}
     real_word = lambda w: w in real
-    homograph = homographs(words, real)
     # Each apostrophe word's commonest case in the dictionary: "o'clock" for "O'Clock" (a title's case).
     for w, (f, bad, *_) in sorted(words.items(), key=lambda x: x[1][0]):
         if "'" in w and not bad:
             commonest[w.lower()] = w
-
-
-def homographs(words, real):
-    """The words that are a contraction's letters too: the contraction is the dictionary's ("cant": can't,
-    "ill": I'll, not a possessive's "states") or the word's shortcut ("id": I'd, "whats": what's)."""
-    out = set()
-    for w, (_, bad, _, shortcuts) in words.items():
-        if (
-            "'" in w
-            and not bad
-            and re.fullmatch(r"[a-z]+'(?:t|m|re|ve|ll|d)", w.lower())
-        ):
-            out.add(w.lower().replace("'", ""))
-        if not bad and any("'" in t for t, _ in shortcuts):
-            out.add(w.lower())
-    return out & real
 
 
 def typed_for(rng, word, prefix=True, bare=False):
@@ -217,9 +195,7 @@ def typed_for(rng, word, prefix=True, bare=False):
     if r < 0.90:
         return rng.choice(spell)
     full = rng.choice(phone) if rng.random() < 0.5 else w
-    if len(full) < 2:
-        return full
-    return full[: len(full) - 1 if rng.random() < 0.5 else rng.randrange(1, len(full))]
+    return full[: rng.randrange(1, len(full))] if len(full) >= 2 else full
 
 
 def standard(word, sentence_start, chat=False):
@@ -307,13 +283,7 @@ def examples(rng, seg):
     out, k = [], 0
     while k < len(words):
         m = words[k]
-        if rng.random() < (
-            # By the letters typed, so I'd as often as id: by the word written, the first r5 gave id ten times
-            # its share of the hints "id" and "If I were you id" stayed id (#561).
-            max(HINT, HOMOGRAPH_HINT)
-            if m.group().lower().replace("'", "") in homograph
-            else HINT
-        ):
+        if rng.random() < HINT:
             n = words[k + 1] if k + 1 < len(words) else None
             if (
                 n

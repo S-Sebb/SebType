@@ -13,8 +13,6 @@ the phone gives the model, at most 300 characters of a line. The window holds th
 which see the ones before them across their <s> (ordinary packing); their own context is longer than the
 phone's. A window starts at the <s> at or before a uniformly drawn token, so each source is trained in
 proportion to its tokens, as MIX says, however short its segments.
-
-CONFIG's "init", a checkpoint's folder in RUN_DIR, fine-tunes that model instead (#561): the same schedule, from it.
 """
 
 import json
@@ -91,11 +89,7 @@ def main(run, config_path):
         max_position_embeddings=cfg["context"],
         **cfg["model"],
     )
-    model = (
-        LlamaForCausalLM.from_pretrained(run / cfg["init"], torch_dtype=torch.float32)
-        if "init" in cfg
-        else LlamaForCausalLM(model_cfg)
-    ).cuda()
+    model = LlamaForCausalLM(model_cfg).cuda()
     print(
         f"parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M",
         flush=True,
