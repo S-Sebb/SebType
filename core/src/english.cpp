@@ -151,6 +151,19 @@ std::string utf8(const std::vector<int> &cps) {
   return s;
 }
 
+// The dictionaries and the model have ASCII's apostrophe: a curly one (iOS's, some PC layouts', pasted text's)
+// is read as it, and a word typed with one gets it back where it shows (#583).
+std::vector<int> asciiApostrophes(std::vector<int> cps) {
+  std::replace(cps.begin(), cps.end(), int(U'’'), int('\''));
+  return cps;
+}
+std::string asciiApostrophes(const std::string &s) { return utf8(asciiApostrophes(codePoints(s))); }
+std::string curlyApostrophes(const std::string &s) {
+  auto cps = codePoints(s);
+  std::replace(cps.begin(), cps.end(), int('\''), int(U'’'));
+  return utf8(cps);
+}
+
 // The Latin-1 letters and the code point of a key (0 for function keys).
 bool isLetter(char32_t c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= 0xc0 && c <= 0xff && c != 0xd7 && c != 0xf7);
@@ -159,6 +172,7 @@ char32_t lowerCase(char32_t c) { return (c >= 'A' && c <= 'Z') || (c >= 0xc0 && 
 char32_t upperCase(char32_t c) { return (c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7) ? c - 32 : c; }
 char32_t keyChar(uint32_t sym) {
   if (sym >= 0x1000000) return sym - 0x1000000;  // X11's Unicode keysyms
+  if (sym == 0xad1) return U'’';                 // rightsinglequotemark, as XKB's layouts give it (#583)
   return sym >= 0x20 && sym < 0x100 && sym != 0x7f ? sym : 0;
 }
 // Separators that end a word and let a space correct it, as AOSP's English ones.
@@ -255,7 +269,7 @@ void addResult(std::vector<Word> &results, const Word &w, size_t capacity) {
 // punctuation ends the context.
 latinime::NgramContext ngramContext(const std::string &context) {
   const auto nl = context.rfind('\n');
-  const std::string line = nl == std::string::npos ? context : context.substr(nl + 1);
+  const std::string line = asciiApostrophes(nl == std::string::npos ? context : context.substr(nl + 1));
   std::vector<std::string> words;
   for (size_t i = 0; i < line.size();) {
     const size_t start = line.find_first_not_of(" \t", i);
@@ -481,7 +495,7 @@ class English : public Engine {
       }
       if (typed_.empty()) loadModel();
       typed_.push_back(int(c));
-      const auto [x, y] = k.x >= 0 ? std::pair{k.x, k.y} : keyCentre(lowerCase(c));
+      const auto [x, y] = k.x >= 0 ? std::pair{k.x, k.y} : keyCentre(lowerCase(c == U'’' ? '\'' : c));
       xs_.push_back(x), ys_.push_back(y);
       typedChanged();
       return true;
@@ -870,7 +884,8 @@ class English : public Engine {
   // The strip and the correction for the letters typed so far.
   void update() {
     decodePending_ = false;
-    const std::string typed = utf8(typed_);
+    const std::vector<int> letters = asciiApostrophes(typed_);
+    const std::string typed = utf8(letters);
     correction_ = false, modelStrip_ = false;
     strip_.clear();
     // Right after "@" (an address typed in a text field): domains, never a correction.
@@ -893,7 +908,7 @@ class English : public Engine {
           }
       return out;
     };
-    const std::vector<Word> results = suggest(typed_);
+    const std::vector<Word> results = suggest(letters);
 
     // AOSP's rule: the typed word leaves the list, and whether it was there decides if it may be corrected.
     std::string committed = typed;
@@ -907,15 +922,15 @@ class English : public Engine {
       const Word &first = results.front();
       const int kind = first.kind & Dictionary::KIND_MASK_KIND;
       const bool whitelisted = kind == Dictionary::KIND_WHITELIST;
-      const bool allowed = whitelisted || (typed_.size() > 1 && !typedFound);
+      const bool allowed = whitelisted || (letters.size() > 1 && !typedFound);
       const bool strong = whitelisted || ((first.kind & Dictionary::KIND_FLAG_APPROPRIATE_FOR_AUTOCORRECTION) &&
-                                          normalizedScore(typed_, first.word, first.score) >= kAutocorrectThreshold);
+                                          normalizedScore(letters, first.word, first.score) >= kAutocorrectThreshold);
       if (allowed && kind != Dictionary::KIND_SHORTCUT && strong) committed = strip.front();
     }
     show(strip, committed);
     // A word longer than the dictionary's words isn't ranked: as long as a pasted line, it overran the model's
     // batch and its decoding failed (#568).
-    if (!model_ready_ || typed_.empty() || typed_.size() >= size_t(kMaxWordLength)) return;
+    if (!model_ready_ || letters.empty() || letters.size() >= size_t(kMaxWordLength)) return;
     // The model's ranking comes from the worker; a key never waits for it.
     // A personal word's shortcut offers it first, as the FUTO-based app did (#380): the model would rank a
     // phrase it doesn't know last. That app put first the words of the shortcut typed, in any case, and a
@@ -927,7 +942,7 @@ class English : public Engine {
       for (int &c : cps) c = int(lowerCase(c));
       return cps;
     };
-    const auto typedLower = lower(typed_);
+    const auto typedLower = lower(letters);
     shortcuts_.clear();
     const auto add = [&](const std::string &word) {
       if (std::find(shortcuts_.begin(), shortcuts_.end(), word) == shortcuts_.end()) shortcuts_.push_back(word);
@@ -959,7 +974,7 @@ class English : public Engine {
       else if (!main_->has(typedLowerText))
         for (const std::string &w : userWords)
           if (lowerCaseWord(w) == typedLowerText && !allCaps(w) && userHas(w)) {
-            learned = withCase(w, typed_);
+            learned = withCase(w, letters);
             break;
           }
     }
@@ -967,9 +982,9 @@ class English : public Engine {
     // letters are a word, is ranked in small letters, and a space gives it its first letter's case: as typed, no
     // word, it became a contraction ("I feel iLl": I'll), and read capitalised, "I feel Ill" was I'll too. Inner
     // capitals whose small letters aren't a word are meant (DeShawn, iCloud, camelCase) and stay (#568).
-    const bool stray = std::any_of(typed_.begin() + 1, typed_.end(), [](int c) { return char32_t(c) != lowerCase(c); });
+    const bool stray = std::any_of(letters.begin() + 1, letters.end(), [](int c) { return char32_t(c) != lowerCase(c); });
     const bool readSmall = learned.empty() && !main_->has(typed) && stray && !allCaps(typed) && main_->has(typedLowerText);
-    const std::vector<int> cased = readSmall ? typedLower : typed_;
+    const std::vector<int> cased = readSmall ? typedLower : letters;
     const std::string word = learned.empty() ? utf8(cased) : learned;
     const auto has = [&](const std::string &w) {
       return std::any_of(ranked.begin(), ranked.end(), [&](const Word &r) { return r.word == w; });
@@ -985,7 +1000,7 @@ class English : public Engine {
       if (!same && small != w.word && !allCaps(w.word) && small.find('\'') != std::string::npos && has(small))
         continue;
       rank.candidates.push_back({same ? word : w.word,
-                                 normalizedScore(typed != typedLowerText ? typedLower : typed_, w.word, w.score)});
+                                 normalizedScore(typed != typedLowerText ? typedLower : letters, w.word, w.score)});
     }
     std::lock_guard g(mutex_);
     rank.gen = gen_;
@@ -1003,8 +1018,9 @@ class English : public Engine {
     if (!autocorrect_ || resumed_ || before == '.' || before == '/' || before == ':' ||
         std::isdigit(static_cast<unsigned char>(before)))
       committed = typed;
-    for (auto &w : strip) w = withCase(w, typed_);
-    committed = withCase(committed, typed_);
+    const bool curly = std::ranges::find(typed_, int(U'’')) != typed_.end();
+    for (auto &w : strip) w = withCase(curly ? curlyApostrophes(w) : w, typed_);
+    committed = withCase(curly ? curlyApostrophes(committed) : committed, typed_);
     // The typed word is always there to pick (and learn), after the correction when there is one.
     strip_.clear();
     correction_ = committed != typed;
@@ -1096,8 +1112,9 @@ class English : public Engine {
   // As AOSP's DictionaryFacilitator.addWordToUserHistory: a word typed at the start of a sentence is learned
   // in lower case unless only its capitalised form is a word; a word the dictionaries don't know counts as
   // valid once it was picked, else after it was typed a few times (the forgetting curve's levels); offensive
-  // words aren't learned.
-  std::string learn(const std::string &word, bool picked) {
+  // words aren't learned. A word typed with a curly apostrophe is learned with ASCII's, as it is looked up.
+  std::string learn(const std::string &typed, bool picked) {
+    const std::string word = asciiApostrophes(typed);
     if (!learning_ || !history_ || !main_ || word.empty() || codePoints(word).size() >= size_t(kMaxWordLength)) return {};
     if (main_->offensive(word) || main_->offensive(lowerCaseWord(word))) return {};
     std::string learned = word;
@@ -1161,7 +1178,7 @@ class English : public Engine {
     edit_.composeAfter = int(tail);
     typed_ = word;
     for (int c : word) {
-      const auto [x, y] = keyCentre(lowerCase(c));
+      const auto [x, y] = keyCentre(lowerCase(c == U'’' ? '\'' : c));
       xs_.push_back(x), ys_.push_back(y);
     }
     tail_ = tail;

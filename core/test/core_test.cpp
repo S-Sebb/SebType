@@ -686,6 +686,48 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
   }
 }
 
+// A word typed with a curly apostrophe (iOS's, some PC layouts', pasted text's) keeps it, and is looked up and
+// ranked as with ASCII's: "I don’t" committed "dont" (#583).
+TEST_F(EnglishTest, ACurlyApostropheIsReadAsAsciisAndKept) {
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  const auto curly = [](std::string s) {
+    for (size_t at; (at = s.find('\'')) != std::string::npos;) s.replace(at, 1, "’");
+    return s;
+  };
+  // The list shown and what a space commits for TYPED after CONTEXT
+  const auto typing = [&](const std::string &context, const std::string &typed) {
+    en->setContext(context);
+    for (size_t i = 0; i < typed.size(); i++)
+      if (typed.compare(i, 3, "’") == 0) en->key({0x1000000 + U'’', 0, false}), i += 2;
+      else en->key({static_cast<uint32_t>(typed[i]), 0, false});
+    const int ranked = readyCount();
+    en->settle();
+    EXPECT_TRUE(ready(ranked));
+    auto shown = list();
+    const auto preedit = en->preedit().text();
+    type(" ");
+    return std::tuple{shown, preedit, en->takeCommit()};
+  };
+  for (const auto &[context, typed] : std::vector<std::array<std::string, 2>>{
+           {"I ", "don't"}, {"", "I've"}, {"I think ", "it's"}, {"I ", "dpn't"}, {"I don’t think ", "it's"}}) {
+    const auto [ascii, asciiPreedit, asciiCommit] = typing(context, typed);
+    const auto [shown, preedit, commit] = typing(context, curly(typed));
+    std::vector<std::string> expected;
+    for (const auto &w : ascii) expected.push_back(curly(w));
+    EXPECT_EQ(shown, expected) << context << typed;
+    EXPECT_EQ(preedit, curly(typed));
+    EXPECT_EQ(commit, curly(asciiCommit)) << context << typed;
+  }
+  // Fcitx's ’ on Linux is X11's rightsinglequotemark keysym, not the Unicode one.
+  en->setContext("I ");
+  type("dpn");
+  en->key({0xad1, 0, false});
+  type("t ");
+  EXPECT_EQ(en->takeCommit(), "don’t ");
+}
+
 // A letter shows the decoder's strip at once and the model ranks it on the worker (#310); a space typed
 // right after the letters, before that ranking has come, waits for it and corrects by the model.
 TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
