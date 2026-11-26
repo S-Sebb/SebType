@@ -7,7 +7,9 @@ harness (`android/test/english/run.sh` with `SEBTYPE_MODEL`) measures it against
 [docs/perf/2026-11-15-english.md](../../docs/perf/2026-11-15-english.md) has the results.
 
 The committed model is r4 (#556), trained by this folder as of commit `36be6045`: its best checkpoint,
-step 15,000 (dev gain 112.70; GGUF sha256 `ca19bde0037b5d1eb03cd10f70316de53a653bd25353e6d8649fa51e99f29cf1`). It
+step 15,000 (dev gain 112.70; GGUF sha256 `ca19bde0037b5d1eb03cd10f70316de53a653bd25353e6d8649fa51e99f29cf1`).
+`pack.py`'s texting style changed after r4: it leaves out apostrophes only in the letters typed, not in the
+text the model learns to predict (#561), so this folder now packs different data from r4's. It
 fixes what made r2 and r3 write contractions, capitals and texted words wrong. r2, trained as of `15671d98`, came
 before it; r3 added everyday sources and texting style but fixed fewer misspellings than r2 and wasn't committed
 ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md#results-the-retrained-model-r3-2026-11-16)).

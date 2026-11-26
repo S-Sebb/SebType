@@ -120,11 +120,14 @@ check(
 )
 # Texting leaves out apostrophes only in the letters typed: the text the model predicts keeps them (#561).
 texting = pack.Texting(random.Random(0))
-texting.drop_apostrophes, texting.short, texting.tail = True, 0, ""
+texting.drop_apostrophes = texting.lower_i = texting.lower_starts = (
+    texting.drop_stop
+) = True
+texting.short, texting.tail = 0, ""
 check(
     "texting: the text keeps its apostrophes",
-    texting.text("so what's up, I can't", True, False) == "so what's up, I can't",
-    texting.text("so what's up, I can't", True, False),
+    texting.text("So what's up? I can't.", True, True) == "so what's up? i can't",
+    texting.text("So what's up? I can't.", True, True),
 )
 check(
     "examples: a word after a quote",
