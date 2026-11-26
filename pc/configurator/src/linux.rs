@@ -957,6 +957,41 @@ fn sebtype_for_rime(layout: &str, ims: &[(String, String)]) -> Vec<(String, Stri
         .collect()
 }
 
+/// The line setup-ime.sh's --undo-all reads (#611, groups_record there) for SebType's input method put in
+/// `group`, which had `before` and now has `after`: its name, 0 (setup didn't make it), its default input
+/// method in `profile`, and the input methods taken out, in order.
+fn record_line(
+    profile: &str,
+    group: &str,
+    before: &[(String, String)],
+    after: &[(String, String)],
+) -> String {
+    let mut default = "";
+    let (mut in_group, mut name, mut im) = (false, "", "");
+    for line in profile.lines().chain(["["]) {
+        if line.starts_with('[') {
+            if in_group && name == group && default.is_empty() {
+                default = im;
+            }
+            let id = line.trim().trim_start_matches("[Groups/").trim_end_matches(']');
+            in_group = line.starts_with("[Groups/")
+                && !id.is_empty()
+                && id.bytes().all(|b| b.is_ascii_digit());
+            (name, im) = ("", "");
+        } else if let Some(v) = line.strip_prefix("Name=") {
+            name = v;
+        } else if let Some(v) = line.strip_prefix("DefaultIM=") {
+            im = v;
+        }
+    }
+    let taken: Vec<&str> = before
+        .iter()
+        .map(|(im, _)| im.as_str())
+        .filter(|&im| !after.iter().any(|(a, _)| a == im))
+        .collect();
+    format!("{group}\t0\t{default}\t{}\n", taken.join(" "))
+}
+
 /// A backup folder of its own in `dir`, named `time`, never one with an earlier copy in it: a retry in the same
 /// second gets `<time>_2`, which a C-sorted `ls` lists after `<time>/…` (README, Removing SebType).
 fn new_backup(dir: &Path, time: &str) -> io::Result<PathBuf> {
@@ -993,8 +1028,15 @@ pub fn use_sebtype_for_rime() -> io::Result<()> {
         &chrono::Local::now().format("%Y%m%d-%H%M%S").to_string(),
     )?;
     fs::copy(config().join("fcitx5/profile"), backup.join("profile"))?;
-    for (group, layout, ims) in groups {
-        let ims = sebtype_for_rime(&layout, &ims);
+    let profile = fs::read_to_string(backup.join("profile"))?;
+    let mut record = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("groups.tsv"))?;
+    for (group, layout, before) in groups {
+        let ims = sebtype_for_rime(&layout, &before);
+        let line = record_line(&profile, &group, &before, &ims);
+        io::Write::write_all(&mut record, line.as_bytes())?;
         let count = ims.len().to_string();
         let mut args = vec!["ssa(ss)", &group, &layout, &count];
         for (im, l) in &ims {
@@ -1715,13 +1757,21 @@ mod tests {
         assert_eq!(rime_group_names(), Ok(Some(vec![])));
         let mut backups: Vec<_> = fs::read_dir(data().join("sebtype/backup"))
             .unwrap()
-            .map(|b| b.unwrap().path().join("profile"))
+            .map(|b| b.unwrap().path())
+            .filter(|b| b.is_dir())
+            .map(|b| b.join("profile"))
             .collect();
         backups.sort();
         assert_eq!(backups.len(), 2, "{backups:?}");
         assert_eq!(fs::read_to_string(&backups[0]).unwrap(), before);
         assert_ne!(fs::read_to_string(&backups[1]).unwrap(), before);
         assert_ne!(profile(), before);
+        // What each group lost, for setup-ime.sh --undo-all (#611), each line written before its group's
+        // change: Work's once for the failed write and once for the retry.
+        assert_eq!(
+            fs::read_to_string(data().join("sebtype/backup/groups.tsv")).unwrap(),
+            "Rime\t0\tkeyboard-us\tkeyboard-us rime\nWork\t0\trime\trime\nWork\t0\trime\trime\n"
+        );
     }
 
     /// The Rime row and Use SebType against test.sh's made-up Fcitx5 that doesn't know SebType's input
