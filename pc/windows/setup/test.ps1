@@ -334,6 +334,7 @@ if ($Typing) {
     }
     function ButtonIcon { $p = "$out\489-icon.png"; $tsf::ButtonIcon($p); [Convert]::ToBase64String([IO.File]::ReadAllBytes($p)) }
     $quickEnglish = {
+      $tsf::StartTiming()  # ShiftHeld: how Windows got each Shift tap
       # Rime deploys and Mozc starts with the first use: until then keys reach the field (#275).
       Field zh; if (-not (Wait-Until 90 { (First zh) -eq '你' })) { throw "中文 never typed 你 for ni" }
       Field ja; if (-not (Wait-Until 30 { (First ja) -match '[あア]' })) { throw "日本語 never typed kana for a" }
@@ -343,14 +344,22 @@ if ($Typing) {
         $lang, $via = $pair
         Field $lang
         $normal = ButtonIcon
-        Keys Shift_L; $quick = First $lang
-        if ($quick -eq $want[$lang]) { throw "$lang`: the Shift tap didn't turn English on ('$quick')" }
+        # The key path (FreeRDP on a busy PC, the tunnel over the VPN) can hold a tap's release back past the
+        # 500 ms limit, and Windows then gets Shift held, which rightly switches nothing (#222, #588): the tap goes
+        # again. A tap Windows got as one must switch.
+        $retaps = foreach ($try in 1..3) {
+          Keys Shift_L; $quick = First $lang
+          if ($quick -ne $want[$lang]) { break }
+          $held = $tsf::ShiftHeld()
+          if ($held -le 500 -or $try -eq 3) { throw "$lang`: the Shift tap didn't turn English on ('$quick'), Windows got Shift held $held ms" }
+          "$held ms"
+        }
         if ($via -eq 'en') { $tsf::ActivateLayout(0x409, '00000409'); $tsf::Settle(500) } else { Field $via }
         Field $lang
         $t = First $lang
         if ($t -ne $want[$lang]) { throw "$lang after $via and back gave '$t' (want $($want[$lang])), the Shift tap '$quick'" }
         if ((ButtonIcon) -ne $normal) { throw "$lang after $via and back: the button's icon isn't the one before the Shift tap" }
-        "$lang via $via`: $t"
+        "$lang via $via`: $t$(if ($retaps) { " (tapped again: Windows got Shift held $($retaps -join ', '))" })"
       }
       Keys 'Alt_L+grave'  # 日本語 back to あ
       $seen -join ', '

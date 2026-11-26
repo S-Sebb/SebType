@@ -442,18 +442,39 @@ namespace SebType {
 
     // Timing for compare.ps1 (#54): when each key went down, from a low-level keyboard hook that sees it
     // as it enters the session's input, and when the text store changed (the input method's composition
-    // or commit), on one Stopwatch clock.
+    // or commit), on one Stopwatch clock. The hook also keeps the last Shift press and release (ShiftHeld).
     internal static readonly List<long> keys = new List<long>(), edits = new List<long>();
     internal static void Mark(List<long> l) { var t = System.Diagnostics.Stopwatch.GetTimestamp(); lock (l) l.Add(t); }
     delegate IntPtr HookProc(int code, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern IntPtr SetWindowsHookExW(int id, HookProc f, IntPtr mod, uint thread);
     [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr h, int code, IntPtr w, IntPtr l);
     static HookProc hookProc;  // kept alive while the hook is set
+    static readonly object shiftLock = new object();
+    static bool shiftDown;
+    static uint shiftPressed, shiftReleased;  // the input's own times (KBDLLHOOKSTRUCT.time), ms
+    // How long the last Shift press lasted as Windows got it, press to release, before any app or input method
+    // handled it; -1 before the first. Says whether the key path delivered a tap or a held Shift (#588).
+    public static int ShiftHeld() {
+      lock (shiftLock) return shiftPressed == 0 || shiftDown ? -1 : (int)(shiftReleased - shiftPressed);
+    }
     public static void StartTiming() {
+      if (hookProc != null) return;
       var ready = new ManualResetEvent(false);
       var t = new Thread(() => {
         hookProc = (code, w, l) => {
-          if (code >= 0 && ((int)w == 0x100 || (int)w == 0x104)) Mark(keys);  // WM_KEYDOWN, WM_SYSKEYDOWN
+          if (code >= 0) {
+            bool down = (int)w == 0x100 || (int)w == 0x104;  // WM_KEYDOWN, WM_SYSKEYDOWN
+            if (down) Mark(keys);
+            int vk = Marshal.ReadInt32(l);
+            if (vk == 0xA0 || vk == 0xA1) {  // VK_LSHIFT, VK_RSHIFT
+              uint at = (uint)Marshal.ReadInt32(l, 12);
+              lock (shiftLock) {
+                if (down && !shiftDown) shiftPressed = at;
+                if (!down) shiftReleased = at;
+                shiftDown = down;
+              }
+            }
+          }
           return CallNextHookEx(IntPtr.Zero, code, w, l);
         };
         SetWindowsHookExW(13 /* WH_KEYBOARD_LL */, hookProc, GetModuleHandleW(null), 0);
