@@ -641,7 +641,7 @@ def f(n, v): return bytes([n << 3 | 2, len(v)]) + v if isinstance(v, bytes) else
 entry = f(1, 'もふてすと'.encode()) + f(2, 'モフ試験語'.encode()) + f(5, 1)
 open(sys.argv[1], 'wb').write(f(2, f(1, 7) + f(3, b'SebType') + f(4, entry)))
 PY
-  rpm2cpio "$old_rpm" | (cd "$old" && cpio -idm --quiet) || return 1
+  rpm2cpio "$old_rpm" | (cd "$old" && cpio -idm --quiet; s=$?; cat >/dev/null; exit $s) || return 1
   local mounts; read -ra mounts <<<"$(librime_mounts "$own")"
   local old_fcitx=(env "FCITX_ADDON_DIRS=$old/usr/lib64/fcitx5:/usr/lib64/fcitx5" "XDG_DATA_DIRS=$old/usr/share:/usr/share"
     bwrap --dev-bind / / "${mounts[@]}" --overlay-src /usr/libexec --overlay-src "$old/usr/libexec" --ro-overlay /usr/libexec)

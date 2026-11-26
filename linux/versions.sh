@@ -134,7 +134,8 @@ sebtype_unpack() {
   touch -c "$rpm"
   [[ -f $rpm ]] || SEBTYPE_SOURCES_KEY=$key "$(dirname "${BASH_SOURCE[0]}")/build.sh" >/dev/null || return 1
   rm -rf "$1"; mkdir -p "$1"
-  rpm2cpio "$rpm" | (cd "$1" && cpio -idm --quiet)
+  # Drained after cpio's trailer, as in librime_unpack, so rpm2cpio doesn't die of SIGPIPE under pipefail.
+  rpm2cpio "$rpm" | (cd "$1" && cpio -idm --quiet; s=$?; cat >/dev/null; exit $s)
 }
 sebtype_env() { # <dir>: Fcitx5 finds the add-on there before its own
   echo "FCITX_ADDON_DIRS=$1/usr/lib64/fcitx5:/usr/lib64/fcitx5" "XDG_DATA_DIRS=$1/usr/share:/usr/share"
