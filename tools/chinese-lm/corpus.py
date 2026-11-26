@@ -3,8 +3,8 @@
   corpus.py RUN_DIR
 
 Reads RUN_DIR/data/src (fetch.sh) and writes RUN_DIR/data/corpus/SOURCE.txt and SOURCE.dev.txt: the segments
-of the documents common.split() puts in train and in dev (an article, a dialogue, a meeting, a message tree;
-the dev loss reads them). The test documents aren't read. A segment is a paragraph or a chat turn, in
+of the documents common.split() puts in train and in dev (an article, a dialogue, a meeting, a message tree,
+a Wiktionary entry; the dev loss reads them). The test documents aren't read. A segment is a paragraph or a chat turn, in
 simplified characters (common.clean), each once: a segment seen before in any source, or in a dev or test
 document, isn't written again (#557: through duplicates, dev text was training text).
 
@@ -140,6 +140,18 @@ def main(run):
             for g in range(pq.ParquetFile(f).num_row_groups)
         ]
         w.write("wikipedia", (d for part in pool.imap(wiki_part, parts) for d in part))
+        # Last, so the other files stay as they were without it: a headword is 2 characters or more.
+        w.write(
+            "wiktionary",
+            pool.imap(
+                segments,
+                (
+                    (common.split("wiktionary", k), ls, 2)
+                    for k, ls in common.wiktionary(src)
+                ),
+                chunksize=256,
+            ),
+        )
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ import bz2
 import glob
 import gzip
 import hashlib
+import html
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -52,6 +53,7 @@ HELD = {
     "hundredcv": (150, 150),
     "kdconv": (200, 200),
     "tatoeba": (200, 200),
+    "wiktionary": (0, 200),
 }
 CHAT = ["meetings", "hundredcv", "tatoeba", "kdconv", "oasst2"]
 
@@ -226,6 +228,49 @@ def oasst2(src):
                 paras = [p for p in paras if not LIST.match(p) and not AI.search(p)]
             trees.setdefault(m["message_tree_id"], []).extend(paras)
     yield from sorted(trees.items())
+
+
+# Wiktionary's Chinese entries (#557): the headword, a phrase of 2-8 characters, and its example sentences, in
+# {{zh-x|…}} (words spaced or joined by . and -, a character's reading in {…}, its simplified form in […] after
+# it, bold in ''').
+WIKT_PAGE = re.compile(r"<page>.*?</page>", re.DOTALL)
+WIKT_TITLE = re.compile(r"<title>([㐀-䶿一-鿿]{2,8})</title>")
+WIKT_ZH = re.compile(
+    r"(?:^|>)==(?:漢語|汉语)==[ \t]*$(.*?)(?=^==[^=]|</text>|\Z)",
+    re.DOTALL | re.MULTILINE,
+)
+WIKT_M = re.compile(r"\|m=[^|}\s]")
+WIKT_X = re.compile(r"\{\{zh-x\|((?:\{[^{}]*\}|[^|{}])*)")
+
+
+def wiktionary(src):
+    """(key, lines) of each Chinese Wiktionary entry: its headword and its examples."""
+    with bz2.open(
+        Path(src, "wiktionary/zhwiktionary-20261101-pages-articles.xml.bz2"),
+        "rt",
+        encoding="utf-8",
+    ) as f:
+        buf = ""
+        for chunk in iter(lambda: f.read(1 << 22), ""):
+            buf += chunk
+            end = buf.rfind("</page>")
+            if end < 0:
+                continue
+            pages, buf = buf[: end + 7], buf[end + 7 :]
+            for page in WIKT_PAGE.findall(pages):
+                t = WIKT_TITLE.search(page)
+                if not t or "<ns>0</ns>" not in page or "<redirect" in page:
+                    continue
+                zh = WIKT_ZH.search(html.unescape(page))
+                # Only words with a Mandarin reading: not Cantonese's, Min's or Classical Chinese's alone.
+                if not zh or not WIKT_M.search(zh.group(1)):
+                    continue
+                lines = [t.group(1)]
+                for x in WIKT_X.findall(zh.group(1)):
+                    x = re.sub(r"\{[^}]*\}", "", x)
+                    x = re.sub(r"[^\s\[\]]\[([^\]]*)\]", r"\1", x)
+                    lines.append(re.sub(r"[\s^\[\].@'-]", "", x))
+                yield t.group(1), lines
 
 
 def chat(src):
