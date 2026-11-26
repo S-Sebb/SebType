@@ -41,6 +41,10 @@ SEBTYPE_SOURCES=(VERSION core linux pc/icons pc/linux/setup-ime.sh pc/linux/mozc
   android/app/src/main/res/font/sebtype_nunito_extrabold.ttf data/rime engines/librime android/native/src/main/assets/licenses
   engines/sebtype-lm/CMakeLists.txt engines/sebtype-lm/fetch-llama.sh engines/sebtype-lm/sebtype_lm.cpp
   engines/sebtype-lm/sebtype_lm.h engines/sebtype-lm/zh_lm.cpp engines/sebtype-lm/zh_lm.h engines/sebtype-lm/chinese.gguf)
+# The files in SEBTYPE_SOURCES' folders that no build reads, left out of the packed sources and so of the keys:
+# a change to a test doesn't rebuild the RPM (#578).
+SEBTYPE_NOT_BUILT=(pc/configurator/test.sh pc/configurator/test-update.py pc/configurator/candidate-window.py
+  pc/configurator/build.sh linux/test-rpms.sh linux/test-parallel-build.sh)
 SEBTYPE_MOZC=engines/mozc
 
 # fedora:44 as of 2026-11-09; its packages are what the builds link against.
@@ -104,14 +108,16 @@ sources_key() {
   rm -f "$index.sebtype-key.$$"
   return $rc
 }
-sebtype_key() { sources_key "${SEBTYPE_SOURCES[@]}" "$SEBTYPE_MOZC"; } # what build.sh packs
+sebtype_key() { sources_key "${SEBTYPE_SOURCES[@]}" "$SEBTYPE_MOZC" "${SEBTYPE_NOT_BUILT[@]/#/:(exclude)}"; } # what build.sh packs
 # configurator_sources <root>: a hash of the files the Configurator is built from under <root>, a checkout or
 # the spec's unpacked sources. The spec builds it in, and Cargo rebuilds when it changes: the packed sources'
 # times are all 0, so Cargo's own check by time would keep an older build (#423). linux/test-rpms.sh compares
 # it with the checkout's.
 configurator_sources() {
+  local p skip=()
+  for p in "${SEBTYPE_NOT_BUILT[@]}"; do skip+=(-path "$p" -o); done
   (cd "$1" && find VERSION pc/configurator sync-server/sebtype_sync.py android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png \
-    android/app/src/main/res/font/sebtype_nunito_extrabold.ttf -path pc/configurator/target -prune -o -type f -print0 |
+    android/app/src/main/res/font/sebtype_nunito_extrabold.ttf \( "${skip[@]}" -path pc/configurator/target \) -prune -o -type f -print0 |
     LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | head -c 16)
 }
 # sebtype_rpm <key>: the cached RPM built from sources with that key (#326): two trees on different code
