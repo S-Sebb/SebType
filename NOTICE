@@ -68,9 +68,10 @@ Its added words were checked against SCOWL's en_US-large word list (https://word
   any purpose.  It is provided "as is" without express or implied warranty.
 
 
-SebType's English model (engines/sebtype-lm/english.gguf, trained by tools/english-lm) is licensed under the
-Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/). It was
-trained on, and is adapted from, these openly licensed texts (tools/english-lm/SOURCES.md has the revisions):
+SebType's English model (engines/sebtype-lm/english.gguf, trained by tools/english-lm, release r5c) is licensed
+under the Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/).
+It was trained on, and is adapted from, these openly licensed texts (tools/english-lm/SOURCES.md has the
+revisions):
 
 - English Wikipedia and Simple English Wikipedia (dumps of 2023-11-01, via the wikimedia/wikipedia dataset),
   by Wikipedia's contributors: CC BY-SA.

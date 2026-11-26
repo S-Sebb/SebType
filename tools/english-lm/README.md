@@ -6,14 +6,19 @@ to replace FUTO's `ml4_q6_k.gguf`. The phone runs it through `engines/sebtype-lm
 harness (`android/test/english/run.sh` with `SEBTYPE_MODEL`) measures it against the plan's quality bar, and
 [docs/perf/2026-11-15-english.md](../../docs/perf/2026-11-15-english.md) has the results.
 
-The committed model is r4 (#556), trained by this folder as of commit `36be6045`: its best checkpoint,
-step 15,000 (dev gain 112.70; GGUF sha256 `ca19bde0037b5d1eb03cd10f70316de53a653bd25353e6d8649fa51e99f29cf1`).
-`pack.py`'s texting style changed after r4: it leaves out apostrophes only in the letters typed, not in the
-text the model learns to predict (#561), so this folder now packs different data from r4's. It
-fixes what made r2 and r3 write contractions, capitals and texted words wrong. r2, trained as of `15671d98`, came
+The committed model is r5c (#556): r4 fine-tuned on this folder's data as of commit `4e75ed00`, with
+`config-r5c.json` (1,506 steps on 0.88B fresh tokens from `pack.py RUN_DIR train 5 0.2 0.4`, starting at r4's
+last learning rate). Its checkpoint at step 500 is `select.sh`'s pick (dev gain 107.58 at the shipped weights,
+r4's 107.45; GGUF sha256 `348e44ae13ab29dd2ab1c181ced92c67397439c91459e61a6395215cc80e7191`). It differs from
+r4's data only in texting style, which leaves out apostrophes only in the letters typed, not in the text the
+model learns to predict (#561). A new model ships if it misses none of the harness's bar rows and gets more
+of its rows right than it loses against the committed one (#556).
+
+r4, trained as of `36be6045` (step 15,000; sha256 `ca19bde0037b5d1eb03cd10f70316de53a653bd25353e6d8649fa51e99f29cf1`),
+fixed what made r2 and r3 write contractions, capitals and texted words wrong. r2, trained as of `15671d98`, came
 before it; r3 added everyday sources and texting style but fixed fewer misspellings than r2 and wasn't committed
 ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md#results-the-retrained-model-r3-2026-11-16)).
-`engines/sebtype-lm/sebtype_lm.cpp`'s scoring was re-tuned on r4 (#561, #568).
+`engines/sebtype-lm/sebtype_lm.cpp`'s scoring was tuned on r4 (#561, #568).
 
 ## The model
 
@@ -93,6 +98,17 @@ tools/english-lm/prepare.sh RUN_DIR 0 1 2 &&
 python tools/english-lm/train.py RUN_DIR tools/english-lm/config.json &&
 tools/english-lm/select.sh RUN_DIR r4
 ```
+
+r5c, then, from that run's step 15,000 (`ckpt/r4/step-15000` in `RUN_DIR`), on a fresh pack:
+
+```sh
+python tools/english-lm/pack.py RUN_DIR train 5 0.2 0.4 &&
+python tools/english-lm/train.py RUN_DIR tools/english-lm/config-r5c.json &&
+tools/english-lm/select.sh RUN_DIR r5c
+```
+
+Training on a GPU isn't bit-exact: a rebuild's checkpoints differ a little, as two r5c builds did (picks at
+step 1,000 and step 500, dev gain 107.65 and 107.58).
 
 A model trained on the sources r2 didn't have (NUS SMS, Blended Skill Talk, Topical-Chat, Tatoeba) adds them to
 NOTICE's credits in the PR that ships it.
