@@ -61,12 +61,24 @@ sudo dnf remove sebtype
 ```
 
 `--undo-all` runs every undo below (`sudo dnf install` of Fcitx5's settings apps asks for your password). Then,
-with Fcitx5 stopped, it puts back `~/.config/fcitx5/profile` (the groups), `config` and the add-ons' keys in `conf/`,
-and Mozc's `config1.db`, each from the oldest copy in `~/.local/share/sebtype/backup/` (#582), and Fcitx5's own
-tray. Changes made to them since setup, such as a group added, are lost; a file with no copy stays. Setups up to
-0.2.0 kept no copy of `profile`: then add Rime back in Fcitx 5 Configuration after the removal. The backups move
-to `backup-until-<time>`, so a later install's are its own. If you removed and installed SebType again before
-0.3.0, the oldest copies may be from before the earlier install, not from just before this one.
+with Fcitx5 stopped, it takes SebType's input method out of the groups in `~/.config/fcitx5/profile` and puts
+back what setup and the Configurator's Use SebType took out of each (English, Rime, Mozc, and its default input
+method). Each time they put SebType's input method in a group, once the change is made, they add a line to
+`~/.local/share/sebtype/backup/groups.tsv` with what they took out (each with its layout) and the group's default
+before and after. `--undo-all` puts back everything those lines name, and the default if the group still has the
+one the change left. Groups and input methods added since setup stay (#611). A group setup made goes if nothing
+else is in it. It puts back `config` and the add-ons' keys in `conf/`, and Mozc's `config1.db`, each from its
+oldest copy (#582), and Fcitx5's own tray; a file with no copy stays.
+
+SebType 0.2.0 and older kept no such record. For their groups `--undo-all` also puts back English, Rime and Mozc
+from the newest copy of `profile` in `backup/` that has the group without SebType in it, and the default from it
+when no record has one. A group neither has (setups up to 0.2.0 kept no copy of `profile`, or the group was
+renamed since) gets nothing back: `--undo-all` names it, a group left empty keeps its keyboard, and if it had Rime,
+you add Rime back in Fcitx 5 Configuration after the removal.
+
+The backups and the record move to `backup-until-<time>`, so a later install's are its own. If you removed and
+installed SebType again before 0.3.0, the oldest copies may be from before the earlier install, not from just
+before this one.
 
 Already ran `dnf remove`? Install SebType again, then run the two commands: installing it again only adds newer
 copies, so the oldest are still the ones from before SebType.
@@ -279,8 +291,9 @@ icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray)
 Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
 
 `test-removal.sh`, on yanglab16, removes SebType end to end in a kde-emu session of its own: an account with
-Fcitx5 groups of its own, this tree's RPM installed and set up, a group added, then `sebtype-setup --undo-all` and
-`dnf remove sebtype`; Fcitx5's groups and keys must be the account's own again, running and on disk.
+Fcitx5 groups of its own, this tree's RPM installed and set up, a group and an input method added, then
+`sebtype-setup --undo-all` and `dnf remove sebtype`; Fcitx5's groups and keys must be the account's own again, with
+those added since, running and on disk.
 
 ## App checklist
 

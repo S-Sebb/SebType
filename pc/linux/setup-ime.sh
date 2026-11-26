@@ -3,9 +3,9 @@
 # Mozc, #190) in every app on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-all, run before
-# `dnf remove sebtype`, undoes it all, the account's Fcitx5 groups and keys included. --undo-librime puts Fedora's
-# librime back where SebType 0.2.0 or older installed its own build in its place. --undo-fcitx5 puts back Fcitx5's own settings (kcm-fcitx5,
-# fcitx5-configtool).
+# `dnf remove sebtype`, undoes it all, the account's Fcitx5 groups and keys included (groups and input
+# methods added since stay). --undo-librime puts Fedora's librime back where SebType 0.2.0 or older installed
+# its own build in its place. --undo-fcitx5 puts back Fcitx5's own settings (kcm-fcitx5, fcitx5-configtool).
 # --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
@@ -45,6 +45,17 @@ change() {
 }
 warn() { echo "warning: $1"; todo=$((todo + 1)); }
 save() { mkdir -p "$backup"; cp -p "$1" "$backup/"; }
+# What putting SebType's input method in an Fcitx5 group took out of it, appended for --undo-all (#611) one
+# line a time once the change is made, never rewritten: the group's name, 1 if setup made the group, its
+# default input method before and after, and the input methods taken out with their layouts, in order
+# (im:layout, space-separated). Fields are tab-separated, with a backslash, tab or newline in one written
+# \\, \t or \n. The Configurator's Use SebType appends the same (linux.rs, record_line).
+groups_record=$data/sebtype/backup/groups.tsv
+record_group() {
+  local f out=()
+  for f; do f=${f//\\/\\\\}; f=${f//$'\t'/\\t}; out+=("${f//$'\n'/\\n}"); done
+  mkdir -p "${groups_record%/*}"; (IFS=$'\t'; printf '%s\n' "${out[*]}") >> "$groups_record"
+}
 
 # KWin / Fcitx5 live-session helpers. KWin starts Fcitx5 as the Wayland input method (step 2).
 fcitx_desktop=/usr/share/applications/org.fcitx.Fcitx5.desktop
@@ -130,9 +141,10 @@ kwin_runs_fcitx() {
 }
 
 # --undo-all (#582), before `dnf remove sebtype`: the undos below, then, with Fcitx5 stopped (it writes its
-# groups over profile as it quits), Fcitx5's and Mozc's files back from the oldest backup that has each (later
-# ones hold files SebType had already changed) and Fcitx5's own tray. A file no backup has stays: it was new
-# with setup or already as setup wanted it. The backups move aside, so a later install's oldest are its own.
+# groups over profile as it quits), SebType taken out of Fcitx5's groups, Fcitx5's other files and Mozc's back
+# from the oldest backup that has each (later ones hold files SebType had already changed) and Fcitx5's own
+# tray. A file no backup has stays: it was new with setup or already as setup wanted it. The backups move
+# aside, so a later install's oldest are its own.
 # fcitx5-rime's Rime stays in the groups while SebType is installed, so Fcitx5 starts again at once.
 if ((undo_all)); then
   # Their advice to restart Fcitx5 stays quiet: this restarts it.
@@ -140,21 +152,171 @@ if ((undo_all)); then
   mozc=$config/mozc; [[ -d $HOME/.mozc ]] && mozc=$HOME/.mozc
   backups=$data/sebtype/backup
   # Run where set -e doesn't hold (kwin_restart_fcitx5's ||): each step returns its failure itself.
-  # oldest <file>: the oldest backup of it, none for a profile with SebType in it (setup up to 0.2.0 kept no
-  # profile, so the Configurator's Use SebType or a rerun of setup could save one SebType had changed).
+  # oldest <file>: the oldest backup of it.
   oldest() {
     local b LC_ALL=C  # <time>/ before the Configurator's <time>_2/
-    for b in "$backups"/*/"$1"; do
-      [[ -f $b ]] || continue
-      # SebType's input method in a group's items, not a group named sebtype.
-      [[ $1 == profile ]] && awk '/^\[/ { item = /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ } item && $0 == "Name=sebtype" { found = 1 }
-        END { exit !found }' "$b" && continue
-      echo "$b"; return
-    done
+    for b in "$backups"/*/"$1"; do [[ -f $b ]] && { echo "$b"; return; }; done
+  }
+  # The current profile, not a backup (#611): groups and input methods added since setup stay. SebType's
+  # items (Name=sebtype in a [Groups/N/Items/M]) go; in their place, with their layouts, what setup or the
+  # Configurator's Use SebType took out of the group, as $groups_record has it, then the keyboard-us, Rime
+  # and Mozc of the newest backup with the group, by name, without SebType in it (all a group set up by
+  # SebType 0.2.0 or older has); and its default from before, while it still has one a change left. A group
+  # setup made goes when nothing else is in it; with no group left the profile (a link itself) goes, and
+  # Fcitx5 makes its own as it starts. A group neither names is named in a warning; any group left empty
+  # keeps its place with the keyboard of its layout. Written to a new file beside it (a link's target) and
+  # renamed over it, so a failed write leaves it whole. A profile, record or backup it can't read fails; a
+  # profile without SebType stays as it is.
+  undo_profile() {
+    python3 - "$config/fcitx5/profile" "$backups" "$groups_record" <<'PY'
+import os, re, sys, tempfile
+
+def sections(text):
+    out, cur = [], None
+    for raw in text.splitlines():
+        s = raw.strip()
+        if s.startswith('[') and s.endswith(']'):
+            cur = [s[1:-1], []]
+            out.append(cur)
+        elif cur and s:
+            cur[1].append(raw)
+    return out
+
+def kv(lines):
+    return dict(l.split('=', 1) for l in lines if '=' in l)
+
+def groups(secs):  # [(group lines, [item lines in order])], in number order
+    g = {}
+    for name, lines in secs:
+        if m := re.fullmatch(r'Groups/(\d+)', name):
+            g.setdefault(int(m[1]), [[], {}])[0] = lines
+        elif m := re.fullmatch(r'Groups/(\d+)/Items/(\d+)', name):
+            g.setdefault(int(m[1]), [[], {}])[1][int(m[2])] = lines
+    return [(lines, [items[i] for i in sorted(items)]) for _, (lines, items) in sorted(g.items())]
+
+def read(path):
+    return open(path, encoding='utf-8').read()
+
+def ini(v):  # a value as Fcitx5 writes it: quoted when it has a space, \\ \n \" escaped (stringutils.cpp)
+    if v is not None and len(v) >= 2 and v[0] == v[-1] == '"':
+        v = re.sub(r'\\([\\n"])', lambda m: '\n' if m[1] == 'n' else m[1], v[1:-1])
+    return v
+
+def name(lines):
+    return ini(kv(lines).get('Name'))
+
+def unesc(v):  # a record field: \\ \t \n escaped
+    return re.sub(r'\\(.)', lambda m: {'t': '\t', 'n': '\n'}.get(m[1], m[1]), v)
+
+link, backups, record = sys.argv[1:4]
+path = os.path.realpath(link)
+try:
+    os.lstat(path)
+except FileNotFoundError:
+    sys.exit()
+secs = sections(read(path))
+current = groups(secs)
+if not any(kv(i).get('Name') == 'sebtype' for _, items in current for i in items):
+    sys.exit()
+
+# What SebType took out of each group, with each one's layout: every line's, in order. Its default input
+# method before (the first line's that isn't SebType's) and the ones SebType's change left it with.
+taken, made, default_before, default_after = {}, set(), {}, {}
+try:
+    lines = read(record).splitlines()
+except FileNotFoundError:
+    lines = []
+for line in lines:
+    group, created, before_im, after_im, ims = map(unesc, line.split('\t'))
+    got = taken.setdefault(group, [])
+    got += [tuple(i.split(':', 1)) for i in ims.split() if i.split(':', 1)[0] not in [im for im, _ in got]]
+    if created == '1':
+        made.add(group)
+    if before_im and before_im != 'sebtype':
+        default_before.setdefault(group, before_im)
+    default_after.setdefault(group, {'sebtype'}).add(after_im)
+
+# Each group's keyboard-us, Rime and Mozc in the newest backup (C order: <time>/ before <time>_2/) with the
+# group and no SebType in it: all a group set up by SebType 0.2.0 or older has, which no record names.
+before = {}
+try:
+    folders = sorted(os.listdir(backups))
+except FileNotFoundError:
+    folders = []
+for folder in folders:
+    b = os.path.join(backups, folder, 'profile')
+    try:
+        os.lstat(b)  # a folder it can't look in fails, as a copy it can't read does
+    except (FileNotFoundError, NotADirectoryError):
+        continue
+    for lines, items in groups(sections(read(b))):
+        if all(kv(i).get('Name') != 'sebtype' for i in items):
+            before[name(lines)] = (kv(lines).get('DefaultIM'), [(kv(i)['Name'], kv(i).get('Layout', '')) for i in items
+                                                               if kv(i).get('Name') in ('keyboard-us', 'rime', 'mozc')])
+
+kept, dropped, missing = [], set(), []
+for lines, items in current:
+    group = name(lines)
+    names = [kv(i).get('Name') for i in items]
+    if 'sebtype' in names:
+        if group not in taken and group not in before:
+            missing.append(group)
+        old_default, old = before.get(group, (None, []))
+        back = taken.get(group, [])
+        back = back + [i for i in old if i[0] not in [im for im, _ in back]]
+        default = default_before.get(group) or old_default
+        at = names.index('sebtype')
+        items = [i for i, im in zip(items, names) if im != 'sebtype']
+        items = items[:at] + [[f'Name={im}', f'Layout={layout}'] for im, layout in back if im not in names] + items[at:]
+        if not items and group in made:
+            dropped.add(group)
+            continue
+        if not items:
+            items = [[f"Name=keyboard-{kv(lines).get('Default Layout') or 'us'}", 'Layout=']]
+        names = [kv(i).get('Name') for i in items]
+        # The default goes back while it is still the one SebType's change left.
+        now = kv(lines).get('DefaultIM')
+        if now in default_after.get(group, {'sebtype'}) or now not in names:
+            new = default if default in names else now if now in names else names[0]
+            lines = [f'DefaultIM={new}' if l.split('=', 1)[0] == 'DefaultIM' else l for l in lines]
+    kept.append((lines, items))
+
+for group in missing:
+    print(f'warning: no backup has Fcitx5 group "{group}" from before SebType (setup up to 0.2.0 kept no copy, '
+          'or it was renamed since): if it had Rime, add Rime back to it in Fcitx 5 Configuration once SebType '
+          'is removed')
+if not kept:
+    print(f"change: remove {link}, whose groups setup made for SebType's input method")
+    os.remove(link)
+    sys.exit()
+out = []
+for g, (lines, items) in enumerate(kept):
+    out += [f'[Groups/{g}]', *lines, '']
+    for i, item in enumerate(items):
+        out += [f'[Groups/{g}/Items/{i}]', *item, '']
+for sec, lines in secs:
+    if sec == 'GroupOrder':
+        order = [v for k, v in sorted(kv(lines).items(), key=lambda p: int(p[0])) if ini(v) not in dropped]
+        lines = [f'{k}={v}' for k, v in enumerate(order)]
+    elif re.fullmatch(r'Groups/\d+(/Items/\d+)?', sec):
+        continue
+    out += [f'[{sec}]', *lines, '']
+print(f"change: take SebType's input method out of the groups in {path}")
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.profile.')
+try:
+    os.chmod(fd, os.stat(path).st_mode & 0o7777)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(out).rstrip('\n') + '\n')
+    os.replace(tmp, path)
+except BaseException:
+    os.unlink(tmp)
+    raise
+PY
   }
   put_back() {
     local f b
-    for f in "$config/fcitx5/"{profile,config} "$config/fcitx5/conf/"{clipboard,unicode,quickphrase}.conf "$mozc/config1.db"; do
+    undo_profile || return 1
+    for f in "$config/fcitx5/config" "$config/fcitx5/conf/"{clipboard,unicode,quickphrase}.conf "$mozc/config1.db"; do
       b=$(oldest "${f##*/}")
       [[ -n $b ]] || continue
       echo "change: put back $f from $b"
@@ -165,8 +327,6 @@ if ((undo_all)); then
     if grep -qx 'Library=sebtype' "$f" 2>/dev/null; then echo "change: remove SebType's tray $f"; rm "$f" || return 1; fi
   }
   failed="error: not all of Fcitx5's and Mozc's files went back: the backups stay in $backups"
-  [[ -n $(oldest profile) ]] ||
-    warn "no backup has Fcitx5's groups from before SebType (there were none, or setup up to 0.2.0 kept no copy): once SebType is removed, add Rime back in Fcitx 5 Configuration"
   if kwin_runs_fcitx; then
     echo "change: stop Fcitx5 under KWin while its files go back, then start it again"
     kwin_restart_fcitx5 put_back || {
@@ -183,8 +343,15 @@ if ((undo_all)); then
     put_back || { echo "$failed" >&2; exit 1; }
   fi
   if [[ -d $backups ]]; then
-    echo "change: move $backups to $backups-until-${backup##*/}"
-    mv "$backups" "$backups-until-${backup##*/}"
+    # <time>_2 for a second undo within the same second, as the Configurator names its backups.
+    to=$backups-until-${backup##*/}
+    if [[ -e $to ]]; then
+      i=2
+      while [[ -e ${to}_$i ]]; do i=$((i + 1)); done
+      to+=_$i
+    fi
+    echo "change: move $backups to $to"
+    mv -T "$backups" "$to"
   fi
   echo "SebType's changes are undone: remove it with 'sudo dnf remove sebtype'"
   exit 0
@@ -461,8 +628,9 @@ canon() { awk '/^\[/ { sec = $0; next } NF && !/^#/ { print sec "\t" $0 }' | sor
 # Prints $1 (an Fcitx5 profile file, or /dev/null) updated so the first group has sebtype first in place of
 # keyboard-us, rime and mozc, keeping any other IMs, Default Layout, and other groups. The first group is
 # the one [GroupOrder] names first, not always [Groups/0]: Fcitx5 doesn't write its groups in order (#579).
+# Writes the group's line for $groups_record to file $2.
 fcitx_profile_update() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "$2" <<'PY'
 import re, sys
 
 path = sys.argv[1]
@@ -542,16 +710,29 @@ else:
         g0_kv.append(('DefaultIM', 'sebtype'))
 
 sebtype_layout = ''
-kept = []
+kept, taken = [], []
 for idx in sorted(g0_items):
     item = g0_items[idx]
     im = item.get('Name', '')
     layout = item.get('Layout', '')
     if im == 'sebtype':
         sebtype_layout = layout
-    elif im and im not in ('keyboard-us', 'rime', 'mozc'):
+    elif im in ('keyboard-us', 'rime', 'mozc'):
+        taken.append(f'{im}:{layout}')
+    elif im:
         kept.append((im, layout))
 items = [('sebtype', sebtype_layout)] + kept
+# The line for $groups_record: the group's name as Fcitx5 means it (a quoted value unescaped), escaped.
+def ini(v):
+    if len(v) >= 2 and v[0] == v[-1] == '"':
+        v = re.sub(r'\\([\\n"])', lambda m: '\n' if m[1] == 'n' else m[1], v[1:-1])
+    return v
+def esc(v):
+    return v.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n')
+default_before = dict(parse_kv(g0_lines or [])).get('DefaultIM', '')
+fields = [ini(group0_name), str(int(g0_lines is None)), default_before, 'sebtype', ' '.join(taken)]
+with open(sys.argv[2], 'w', encoding='utf-8') as f:
+    f.write('\t'.join(map(esc, fields)) + '\n')
 
 out = [f'[{first}]']
 for k, v in g0_kv:
@@ -592,6 +773,34 @@ if ((!dry)) && kwin_runs_fcitx; then
   fi
 fi
 
+# Fcitx5 group $1 in its profile, by its name as Fcitx5 means it (a quoted value unescaped): its default
+# input method on the first line, then each input method as im:layout. Nothing for a group it hasn't.
+profile_group() {
+  python3 - "$fcitx_profile" "$1" <<'PY'
+import re, sys
+secs, cur = {}, None
+try:
+    text = open(sys.argv[1], encoding='utf-8').read()
+except FileNotFoundError:
+    text = ''
+for line in text.splitlines():
+    if line.startswith('[') and line.endswith(']'):
+        cur = secs.setdefault(line[1:-1], {})
+    elif cur is not None and '=' in line:
+        cur.setdefault(*line.split('=', 1))
+def ini(v):
+    if len(v) >= 2 and v[0] == v[-1] == '"':
+        v = re.sub(r'\\([\\n"])', lambda m: '\n' if m[1] == 'n' else m[1], v[1:-1])
+    return v
+for sec, kv in secs.items():
+    if re.fullmatch(r'Groups/\d+', sec) and ini(kv.get('Name', '')) == sys.argv[2]:
+        print(kv.get('DefaultIM', ''))
+        items = sorted((int(m[1]), v) for s, v in secs.items() if (m := re.fullmatch(re.escape(sec) + r'/Items/(\d+)', s)))
+        for _, v in items:
+            print(f"{v.get('Name', '')}:{v.get('Layout', '')}")
+        break
+PY
+}
 # The running Fcitx5's controller.
 call() { busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 "$@"; }
 # The running Fcitx5's groups in order, one a line: name, layout, then its input methods, each field ended by
@@ -652,25 +861,40 @@ if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'
     if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc (backup of $fcitx_profile in $backup)$first_rime${first_rime:+$restore (see $removing)}"; then
       call Save  # the running groups, on disk for the backup
       [[ -f $fcitx_profile ]] && save "$fcitx_profile"
+      mapfile -t old < <(profile_group "$group")
+      # Each input method with its layout, which the ones kept keep.
+      mapfile -t pairs < <(call --json=short InputMethodGroupInfo s "$group" |
+        python3 -c 'import json, sys; print(*(f"{im}:{l}" for im, l in json.load(sys.stdin)["data"][1]), sep="\n")')
       args=()
-      for im in "${ims[@]}"; do args+=("$im" ""); done
+      for im in "${ims[@]}"; do
+        l=; for pair in "${pairs[@]}"; do [[ ${pair%%:*} == "$im" ]] && { l=${pair#*:}; break; }; done
+        args+=("$im" "$l")
+      done
       call SetInputMethodGroupInfo 'ssa(ss)' "$group" "$layout" $((${#args[@]} / 2)) "${args[@]}"
       call SetCurrentIM s sebtype >/dev/null 2>&1 || true
       call Save
+      # What went, for --undo-all, now that it has: a failed call stopped setup above.
+      taken=()
+      for im in "${pairs[@]}"; do [[ " ${ims[*]} " == *" ${im%%:*} "* ]] || taken+=("$im"); done
+      new=$(profile_group "$group" | head -1)
+      record_group "$group" 0 "${old[0]-}" "$new" "${taken[*]}"
     fi
   elif ((!dry)) && [[ $(call CurrentInputMethod 2>/dev/null | awk '{print $2}' | tr -d '"' || true) != sebtype ]]; then
     call SetCurrentIM s sebtype >/dev/null 2>&1 || true
   fi
 else
   src=$fcitx_profile; [[ -f $src ]] || src=/dev/null
-  want=$(fcitx_profile_update "$src")
+  record=$(mktemp)
+  want=$(fcitx_profile_update "$src" "$record")
   backed=; [[ -f $fcitx_profile ]] && backed=" (backup in $backup)" && first_rime+=${first_rime:+$restore}
   first_rime+=${first_rime:+ (see $removing)}
   if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
     change "set SebType as the input method in $fcitx_profile$backed$first_rime"; then
     [[ -f $fcitx_profile ]] && save "$fcitx_profile"
     mkdir -p "${fcitx_profile%/*}"; printf '%s\n' "$want" > "$fcitx_profile"
+    mkdir -p "${groups_record%/*}"; cat "$record" >> "$groups_record"
   fi
+  rm -f "$record"
   if fcitx_on_dbus; then
     warn "Fcitx5 doesn't know SebType's input method yet: $(restart_note "SebType input method")"
   fi

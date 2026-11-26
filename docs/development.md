@@ -181,7 +181,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `linux/build.sh` | The core's unit tests (`core/test/`: switching, Shift tap, 简/繁, あ ⇄ ア, popups, paging), in the RPM build |
 | `linux/test-parallel-build.sh` | Two RPM builds from different checkouts at once each package their own code (#305); the cache keeps an RPM per sources, so a checkout reuses its own and a changed one builds another (#326) |
 | `pc/linux/test-setup-ime.sh` | `setup-ime.sh` on a fake fresh account, and SebType's input method in private Fcitx5s ([pc/linux/README.md](../pc/linux/README.md)) |
-| `pc/linux/test-removal.sh` | On yanglab16, in a kde-emu session of its own: this tree's RPM installed and set up, then `sebtype-setup --undo-all` and `dnf remove sebtype` leave the account's own Fcitx5 groups and keys (#582) |
+| `pc/linux/test-removal.sh` | On yanglab16, in a kde-emu session of its own: this tree's RPM installed and set up, then `sebtype-setup --undo-all` and `dnf remove sebtype` leave the account's own Fcitx5 groups and keys, and the groups and input methods added after setup (#582, #611) |
 | `pc/configurator/test.sh` | The Configurator in nested sessions |
 | `pc/windows/setup/test-tcsbackend.sh` | SebType's installer and input methods on TCSBackEnd ([pc/windows/README.md](../pc/windows/README.md)) |
 | `pc/windows/setup/test-unsynced.ps1` | Uninstall and language removal keep the words their sync couldn't send, on a Windows PC ([pc/windows/README.md](../pc/windows/README.md)) |

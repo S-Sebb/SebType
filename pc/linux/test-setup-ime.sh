@@ -163,6 +163,8 @@ fresh_dry() {
 check fresh-dry-run-changes-nothing fresh_dry
 
 fresh_apply() {
+  # Pinyin, which stays, keeps its layout.
+  echo '{"type":"sa(ss)","data":["us",[["keyboard-us",""],["pinyin","de"]]]}' > "$fake/group"
   local o; o=$(echo n | fake_run) || return 1; echo "$o"
   [[ $(kreadconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod) == \
     /usr/share/applications/org.fcitx.Fcitx5.desktop ]] &&
@@ -170,7 +172,7 @@ fresh_apply() {
     grep -q '^Exec=env QT_IM_MODULE=fcitx /usr/bin/wechat' "$h/.local/share/applications/wechat.desktop" &&
     [[ ! -e $h/.local/share/flatpak/overrides/com.qq.QQ ]] &&
     ls "$h"/.local/share/sebtype/backup/*/com.qq.QQ "$h"/.local/share/sebtype/backup/*/wechat.desktop &&
-    grep -q 'Default us 1 sebtype $' "$fake/set.log" && grep -q 'SetCurrentIM s sebtype$' "$fake/current-im.log" &&
+    grep -q 'Default us 2 sebtype  pinyin de$' "$fake/set.log" && grep -q 'SetCurrentIM s sebtype$' "$fake/current-im.log" &&
     grep -qx 'systemctl --user set-environment XMODIFIERS=@im=fcitx' "$fake/systemctl.log" && [[ ! -e $fake/sudo.log ]] &&
     cmp ../../linux/data/notificationitem.conf "$h/.local/share/fcitx5/addon/notificationitem.conf" &&
     fcitx_hotkeys && mozc_keymap && tray_icons && [[ ! -e $h/.local/share/fcitx5/inputmethod/rime.conf ]] &&
@@ -1835,22 +1837,36 @@ EOF
 }
 check offline-profile-update offline_profile
 
-# --undo-all (#582): the undos, then, with Fcitx5 stopped under KWin, each of profile, config, the add-on key
-# files and Mozc's config1.db back from the oldest backup that has it (one no backup has stays; <time>/ before
-# the Configurator's <time>_2/ whatever the locale), Fcitx5's own tray back, the backups moved aside and KWin's
-# input method back. An Fcitx5 that keeps its bus name, or drops it and still runs, gets nothing put back; a
-# copy that fails fails the undo and keeps the backups.
+# --undo-all (#582): the undos, then, with Fcitx5 stopped under KWin, SebType taken out of the current profile's
+# groups (#611: groups and input methods added since setup stay; an unreadable profile, folder or backup, or a
+# failed write, fails the undo and leaves profile whole), each of config, the add-on key files and Mozc's
+# config1.db back from the oldest backup that has it (one no backup has stays; <time>/ before the
+# Configurator's <time>_2/ whatever the locale), Fcitx5's own tray back, the backups moved aside and KWin's
+# input method back. An Fcitx5 that keeps its bus name, or drops it and still runs, gets nothing changed; a
+# copy that fails fails the undo and keeps the backups. This account has no record of what SebType took out of
+# its groups, as one set up by SebType 0.2.0 or older (undo-all-from-record has one): each group gets that from
+# the newest backup with it and no SebType in it, and one with nothing left keeps its keyboard.
 undo_all() {
-  local b=$h/.local/share/sebtype/backup c=$h/.config/fcitx5 o s sleeper
-  # A profile with SebType in it (setup up to 0.2.0, then the Configurator's Use SebType) is never taken.
+  local b=$h/.local/share/sebtype/backup c=$h/.config/fcitx5 o s sleeper mine p
+  # Each group comes from the newest backup with it and no SebType in it: Mine from setup's (an older one
+  # had no Rime yet; a group of the user's named sebtype is no input method of SebType's), Deutsch from the
+  # Configurator's Use SebType after Rime was added to it, Chinese from a later Use SebType's, whose Mine and
+  # Deutsch already had SebType.
+  rm -f "$b/groups.tsv"  # fresh-apply's record
   mkdir -p "$b/19991231-000000" "$b/20000101-000000" "$b/20000101-000000_2" "$b/20000102-000000"
-  printf '[Groups/0/Items/0]\nName=sebtype\n' > "$b/19991231-000000/profile"
-  # A group of the user's named sebtype is no input method of SebType's: that copy is taken.
-  printf '[Groups/0]\nName=Mine\n\n[Groups/1]\nName=sebtype\n' > "$b/20000101-000000/profile"; echo later > "$b/20000101-000000_2/profile"
-  echo later > "$b/20000102-000000/profile"
+  printf '[Groups/0]\nName=Mine\n\n[Groups/0/Items/0]\nName=keyboard-us\n\n[Groups/1]\nName=Deutsch\n\n[Groups/1/Items/0]\nName=keyboard-de\n' > "$b/19991231-000000/profile"
+  printf '[Groups/0]\nName=Mine\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=keyboard-us\n\n[Groups/0/Items/1]\nName=rime\n\n[Groups/1]\nName=sebtype\n\n[Groups/2]\nName=Deutsch\n\n[Groups/2/Items/0]\nName=keyboard-de\n' > "$b/20000101-000000/profile"
+  printf '[Groups/0]\nName=Mine\n\n[Groups/0/Items/0]\nName=sebtype\n\n[Groups/1]\nName=Deutsch\n\n[Groups/1/Items/0]\nName=keyboard-de\n\n[Groups/1/Items/1]\nName=rime\n' > "$b/20000101-000000_2/profile"
+  printf '[Groups/0]\nName=Mine\n\n[Groups/0/Items/0]\nName=sebtype\n\n[Groups/1]\nName=Deutsch\n\n[Groups/1/Items/0]\nName=sebtype\n\n[Groups/2]\nName=Chinese\nDefaultIM=rime\n\n[Groups/2/Items/0]\nName=rime\n' > "$b/20000102-000000/profile"
   printf '[Hotkey]\nTriggerKeys=mine\n' > "$b/20000101-000000/config"
-  echo sebtype > "$c/profile"
-  # Nothing is put back, and the undo says so, for an Fcitx5 that keeps its name; one whose process (a sleep,
+  # Since setup: Mine got pinyin, a group Later was added (both kept), and a group Solo with only SebType's
+  # input method, which no backup has: it keeps its place with its own keyboard, and the undo names it.
+  p='[Groups/0]\nName=Mine\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\n\n[Groups/0/Items/1]\nName=pinyin\n\n[Groups/2]\nName=Later\n\n[Groups/2/Items/0]\nName=keyboard-de\n\n[Groups/1]\nName=sebtype\n\n'
+  p+='[Groups/3]\nName=Chinese\nDefaultIM=sebtype\n\n[Groups/3/Items/0]\nName=sebtype\n\n[Groups/4]\nName=Deutsch\n\n[Groups/4/Items/0]\nName=keyboard-de\n\n[Groups/4/Items/1]\nName=sebtype\n\n'
+  p+='[Groups/5]\nName=Solo\nDefault Layout=fr\nDefaultIM=sebtype\n\n[Groups/5/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Mine\n1=sebtype\n2=Later\n3=Chinese\n4=Deutsch\n5=Solo\n'
+  printf '%b' "$p" > "$c/profile"
+  cp "$c/profile" "$fake/profile-before"
+  # Nothing is changed, and the undo says so, for an Fcitx5 that keeps its name; one whose process (a sleep,
   # as its PID) outlives the name; one already off the bus but still KWin's child; and that one with KWin's
   # input method already cleared (no KWin restart to make).
   sleep 60 & sleeper=$!
@@ -1865,36 +1881,70 @@ undo_all() {
     o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "$stop: succeeded"; return 1; }; echo "$o"
     rm -f "$fake/$stop" "$fake/fcitx-down" "$fake/kwin-child"
     kwriteconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod /usr/share/applications/org.fcitx.Fcitx5.desktop
-    [[ $(cat "$c/profile") == sebtype && -d $b && -f $h/.local/share/fcitx5/addon/notificationitem.conf ]] &&
+    cmp "$c/profile" "$fake/profile-before" && [[ -d $b && -f $h/.local/share/fcitx5/addon/notificationitem.conf ]] &&
       grep -q "^error: Fcitx5 didn't .*: nothing put back" <<<"$o" && ! grep -q 'not all of' <<<"$o" || return 1
   done
   chmod 000 "$b/20000101-000000/config"
   o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a failed copy succeeded"; return 1; }; chmod 644 "$b/20000101-000000/config"; echo "$o"
   grep -q "^error: not all of Fcitx5's and Mozc's files went back" <<<"$o" && [[ -d $b ]] && ! grep -q 'changes are undone' <<<"$o" || return 1
-  # A folder where profile goes: the copy fails, not one into it.
-  rm "$c/profile"; mkdir "$c/profile"
-  o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a copy into the folder profile succeeded"; return 1; }; echo "$o"
-  [[ -z $(ls -A "$c/profile") ]] && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
-  rmdir "$c/profile"; echo sebtype > "$c/profile"
+  # A folder where config goes: the copy fails, not one into it.
+  mv "$c/config" "$fake/config"; mkdir "$c/config"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a copy into the folder config succeeded"; return 1; }; echo "$o"
+  [[ -z $(ls -A "$c/config") ]] && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
+  rmdir "$c/config"; mv "$fake/config" "$c/config"; cp "$fake/profile-before" "$c/profile"
+  # A profile it can't read, a folder it can't look in, a backup or backup folder it can't read, and a folder
+  # it can't write in fail the undo and leave profile as it was.
+  chmod 000 "$c/profile"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "an unreadable profile succeeded"; return 1; }; chmod 644 "$c/profile"; echo "$o"
+  cmp "$c/profile" "$fake/profile-before" && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
+  chmod 600 "$c"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { chmod 755 "$c"; echo "an unsearchable folder succeeded"; return 1; }; chmod 755 "$c"; echo "$o"
+  cmp "$c/profile" "$fake/profile-before" && [[ -d $b ]] && ! grep -q 'changes are undone' <<<"$o" || return 1
+  chmod 000 "$b/20000101-000000_2/profile"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "an unreadable backup succeeded"; return 1; }; chmod 644 "$b/20000101-000000_2/profile"; echo "$o"
+  cmp "$c/profile" "$fake/profile-before" && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
+  chmod 000 "$b/20000101-000000_2"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { chmod 755 "$b/20000101-000000_2"; echo "an unreadable backup folder succeeded"; return 1; }
+  chmod 755 "$b/20000101-000000_2"; echo "$o"
+  cmp "$c/profile" "$fake/profile-before" && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
+  chmod 555 "$c"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a failed write succeeded"; return 1; }; chmod 755 "$c"; echo "$o"
+  cmp "$c/profile" "$fake/profile-before" && grep -q "^error: not all of" <<<"$o" && [[ -d $b && -z $(find "$c" -name '.profile.*') ]] || return 1
   # Run as bash setup-ime.sh, with no slash in its name, the undos still find it. The undos' advice to restart
   # Fcitx5 stays quiet, --undo-names' too (a name to undo again: the runs above undid them): --undo-all restarts it.
   # Another account's Fcitx5 under KWin doesn't hold the undo up.
   printf '[InputMethod]\nName=日本語\n' > "$h/.local/share/fcitx5/inputmethod/mozc.conf"
   touch "$fake/other-user"
   o=$(setup_cmd='bash setup-ime.sh' fake_run --undo-all < /dev/null); s=$?; rm "$fake/other-user"
-  echo "$o"; ((s == 0)) || return 1
+  echo "$o"; cat "$c/profile"; ((s == 0)) || return 1
+  mine=$'[Groups/0]\nName=Mine\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[Groups/0/Items/2]\nName=pinyin\n\n'
+  mine+=$'[Groups/1]\nName=sebtype\n\n[Groups/2]\nName=Later\n\n[Groups/2/Items/0]\nName=keyboard-de\n\n'
+  mine+=$'[Groups/3]\nName=Chinese\nDefaultIM=rime\n\n[Groups/3/Items/0]\nName=rime\nLayout=\n\n'
+  mine+=$'[Groups/4]\nName=Deutsch\n\n[Groups/4/Items/0]\nName=keyboard-de\n\n[Groups/4/Items/1]\nName=rime\nLayout=\n\n'
+  mine+=$'[Groups/5]\nName=Solo\nDefault Layout=fr\nDefaultIM=keyboard-fr\n\n[Groups/5/Items/0]\nName=keyboard-fr\nLayout=\n\n'
+  mine+=$'[GroupOrder]\n0=Mine\n1=sebtype\n2=Later\n3=Chinese\n4=Deutsch\n5=Solo'
   ! grep -q 'Virtual Keyboard\|log in again' <<<"$o" &&
-  [[ $(cat "$c/profile") == $'[Groups/0]\nName=Mine\n\n[Groups/1]\nName=sebtype' && $(cat "$c/config") == $'[Hotkey]\nTriggerKeys=mine' ]] &&
+  [[ $(cat "$c/profile") == "$mine" && $(cat "$c/config") == $'[Hotkey]\nTriggerKeys=mine' ]] &&
     [[ $(wc -c < "$h/.config/mozc/config1.db") == 11 ]] && grep -qx 'TriggerKey=' "$c/conf/clipboard.conf" &&
     [[ ! -e $h/.local/share/fcitx5/addon/notificationitem.conf && ! -e $b ]] && ls -d "$b"-until-* &&
     [[ ! -e $h/.local/share/sebtype/configurator && ! -e $h/.local/share/fcitx5/inputmethod/mozc.conf && ! -e $h/.local/share/fcitx5/rime/sebtype-data.txt ]] &&
-    grep -q '^change: stop Fcitx5 under KWin' <<<"$o" &&
+    grep -q '^change: stop Fcitx5 under KWin' <<<"$o" && [[ $(grep "^warning: no backup has" <<<"$o") == 'warning: no backup has Fcitx5 group "Solo" '* ]] &&
     [[ $(kreadconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod) == /usr/share/applications/org.fcitx.Fcitx5.desktop ]] || return 1
-  # Only copies with SebType in them: profile stays, with the warning to add Rime back.
-  mkdir -p "$b/20000101-000000_2"; printf '[Groups/0/Items/0]\nName=sebtype\n' > "$b/20000101-000000_2/profile"
-  echo current > "$c/profile"
+  # With no record and no backup, a group with only SebType's input method, Default as setup would make it,
+  # keeps its place with its keyboard and is named: nothing tells it was setup's.
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' > "$c/profile"
+  o=$(fake_run --undo-all < /dev/null) || return 1; echo "$o"; cat "$c/profile"
+  [[ $(cat "$c/profile") == $'[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[GroupOrder]\n0=Default' ]] &&
+    grep -q '^warning: no backup has Fcitx5 group "Default" from before SebType' <<<"$o" || return 1
+  # A profile without SebType in it stays byte for byte, whatever a backup holds. The backups move to a folder
+  # of their own when one for this second is there (made for each of the next 60 s, so the undo meets one).
+  mkdir -p "$b/20000101-000000"; printf '[Groups/0]\nName=Old\n' > "$b/20000101-000000/profile"
+  printf '# mine\n[Groups/0]\nName=sebtype\n\n\n[Groups/0/Items/0]\nName=keyboard-us\nName = sebtype' > "$c/profile"; cp "$c/profile" "$fake/profile-before"
+  rm -rf "$b"-until-*
+  for s in $(seq 0 59); do mkdir "$b-until-$(date -d "+$s sec" +%Y%m%d-%H%M%S)"; done
   o=$(fake_run --undo-all < /dev/null) || return 1; echo "$o"
-  [[ $(cat "$c/profile") == current ]] && grep -q "^warning: no backup has Fcitx5's groups from before SebType" <<<"$o"
+  cmp "$c/profile" "$fake/profile-before" && ! grep -q "warning: no backup has" <<<"$o" &&
+    [[ $(find "$b"-until-* -mindepth 1 | sed "s|^$b-until-[0-9-]*_2/||") == 20000101-000000$'\n'20000101-000000/profile ]]
 }
 check undo-all undo_all
 # In a locale that sorts <time>_2/ before <time>/ (en_US: punctuation counts last), <time>/ is still the oldest:
@@ -1902,12 +1952,82 @@ check undo-all undo_all
 undo_all_locale() {
   local b=$h/.local/share/sebtype/backup c=$h/.config/fcitx5 o
   rm -rf "$b"; mkdir -p "$b/20000103-000000" "$b/20000103-000000_2"
-  echo first > "$b/20000103-000000/profile"; echo second > "$b/20000103-000000_2/profile"
+  echo first > "$b/20000103-000000/config"; echo second > "$b/20000103-000000_2/config"
+  # With no record, the newest copy of a group without SebType is <time>_2/'s.
+  printf '[Groups/0]\nName=Mine\n\n[Groups/0/Items/0]\nName=keyboard-us\n' > "$b/20000103-000000/profile"
+  printf '[Groups/0]\nName=Mine\n\n[Groups/0/Items/0]\nName=rime\n' > "$b/20000103-000000_2/profile"
+  printf '[Groups/0]\nName=Mine\n\n[Groups/0/Items/0]\nName=sebtype\n' > "$c/profile"
   o=$(setup_cmd='env LANG=en_US.UTF-8 ./setup-ime.sh' fake_run --undo-all < /dev/null) || return 1; echo "$o"
-  [[ $(cat "$c/profile") == first ]]
+  [[ $(cat "$c/config") == first ]] && grep -qx 'Name=rime' "$c/profile" && ! grep -qx 'Name=keyboard-us' "$c/profile"
 }
 if locale -a 2>/dev/null | grep -qix 'en_US.utf-\?8'; then check undo-all-in-en-us-locale undo_all_locale
 else result SKIP undo-all-in-en-us-locale "needs the en_US.UTF-8 locale (glibc-langpack-en)"; fi
+
+# --undo-all from the record setup and the Configurator's Use SebType keep of what they took out of each
+# group (#611), in accounts of their own where Fcitx5 doesn't run, so setup writes the profile itself.
+# (a) Setup, Rime added to the same group, setup again: both what each took out come back, in order.
+# (b) No profile, setup makes Default, a group Chinese with Rime added, then Use SebType (as linux.rs does
+# it: a backup, a line in the record, Rime out): Default, which setup made, goes quietly, and Chinese gets
+# Rime back. The profile is a link into the user's dotfiles, which stays a link.
+# (c) A group set up by SebType 0.2.0 (in a backup only, no record) and set up again since: the record's
+# input methods and the backup's keyboard-us and Rime come back, with the backup's default.
+# (d) Lines as Use SebType writes them: for a group named with a space (quoted in the profile, plain in the
+# record), Rime with its layout and the default Use SebType's change replaced, still current.
+# (e) A profile link with only setup's group: the link goes, the dotfiles' file stays.
+undo_record() {
+  local f=$fake/record o p h
+  run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$f" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
+    timeout 60 ./setup-ime.sh "$@" < /dev/null; }
+  items() { awk -v g="[Groups/$1/" 'index($0, g) == 1 { i = 1; next } /^\[/ { i = 0 } i && sub(/^Name=/, "")' "$p" | paste -sd ' '; }
+  mkdir -p "$f"; : > "$f/no-fcitx"
+  echo -n "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" > "$f/sebtype"
+  echo -n "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" > "$f/librime"
+  echo 'XMODIFIERS=@im=fcitx' > "$f/session-env"
+  for h in "$f/a" "$f/b" "$f/c" "$f/d" "$f/e"; do
+    p=$h/.config/fcitx5/profile
+    mkdir -p "$h/.config/fcitx5" "$h/.local/share" "$h/scratch/SebType/cache"; ln -sf "$rime_data" "$h/scratch/SebType/cache/"
+  done
+  h=$f/a p=$h/.config/fcitx5/profile
+  printf '[Groups/0]\nName=Mine\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[GroupOrder]\n0=Mine\n' > "$p"
+  o=$(run) || return 1; echo "$o"; [[ $(items 0) == sebtype ]] || return 1
+  printf '[Groups/0]\nName=Mine\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Mine\n' > "$p"
+  o=$(run) || return 1; echo "$o"; [[ $(items 0) == sebtype ]] || return 1
+  cat "$h/.local/share/sebtype/backup/groups.tsv"
+  o=$(run --undo-all) || return 1; echo "$o"; cat "$p"
+  [[ $(items 0) == 'keyboard-us rime' ]] && grep -qx 'DefaultIM=keyboard-us' "$p" && ! grep -q '^warning: no backup' <<<"$o" || return 1
+  h=$f/b p=$h/.config/fcitx5/profile
+  mkdir -p "$h/dotfiles"; ln -s ../../dotfiles/profile "$p"
+  o=$(run) || return 1; echo "$o"; [[ $(items 0) == sebtype ]] || return 1
+  printf '\n[Groups/1]\nName=Chinese\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/1/Items/0]\nName=rime\nLayout=\n' >> "$p"
+  sed -i --follow-symlinks 's/^0=Default$/0=Default\n1=Chinese/' "$p"
+  mkdir "$h/.local/share/sebtype/backup/20000101-000000"; cp "$p" "$h/.local/share/sebtype/backup/20000101-000000/profile"
+  printf 'Chinese\t0\trime\tsebtype\trime:\n' >> "$h/.local/share/sebtype/backup/groups.tsv"
+  sed -i --follow-symlinks 's/^Name=rime$/Name=sebtype/; s/^DefaultIM=rime$/DefaultIM=sebtype/' "$p"
+  cat "$p" "$h/.local/share/sebtype/backup/groups.tsv"
+  o=$(run --undo-all) || return 1; echo "$o"; cat "$p"
+  [[ -L $p && $(items 0) == rime ]] && grep -qx 'Name=Chinese' "$p" && ! grep -qx 'Name=Default' "$p" &&
+    [[ $(sed -n '/^\[GroupOrder\]/,$p' "$p") == $'[GroupOrder]\n0=Chinese' ]] && ! grep -q '^warning: no backup' <<<"$o" || return 1
+  h=$f/c p=$h/.config/fcitx5/profile
+  mkdir -p "$h/.local/share/sebtype/backup/20000101-000000"
+  printf '[Groups/0]\nName=Mine\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n' > "$h/.local/share/sebtype/backup/20000101-000000/profile"
+  printf '[Groups/0]\nName=Mine\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[Groups/0/Items/1]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Mine\n' > "$p"
+  o=$(run) || return 1; echo "$o"; [[ $(items 0) == sebtype ]] || return 1
+  o=$(run --undo-all) || return 1; echo "$o"; cat "$p"
+  [[ $(items 0) == 'mozc keyboard-us rime' ]] && grep -qx 'DefaultIM=rime' "$p" || return 1
+  h=$f/d p=$h/.config/fcitx5/profile
+  mkdir -p "$h/.local/share/sebtype/backup"
+  printf '[Groups/0]\nName="Work Chinese"\nDefault Layout=us\nDefaultIM=pinyin\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[Groups/0/Items/1]\nName=pinyin\nLayout=\n\n[GroupOrder]\n0="Work Chinese"\n' > "$p"
+  printf 'Work Chinese\t0\trime\tpinyin\tkeyboard-us: rime:de\n' > "$h/.local/share/sebtype/backup/groups.tsv"
+  o=$(run --undo-all) || return 1; echo "$o"; cat "$p"
+  [[ $(items 0) == 'keyboard-us rime pinyin' ]] && grep -qx 'DefaultIM=rime' "$p" && grep -qx 'Layout=de' "$p" &&
+    ! grep -q '^warning: no backup' <<<"$o" || return 1
+  h=$f/e p=$h/.config/fcitx5/profile
+  mkdir -p "$h/dotfiles"; ln -s ../../dotfiles/profile "$p"
+  o=$(run) || return 1; echo "$o"
+  o=$(run --undo-all) || return 1; echo "$o"
+  [[ ! -L $p && ! -e $p && -f $h/dotfiles/profile ]]
+}
+check undo-all-from-record undo_record
 
 # Setup with KWin set to Fcitx5 and no Fcitx5 on the bus restarts it under KWin and goes on; when KWin's input
 # method can't be set back, it says so and still finishes.
