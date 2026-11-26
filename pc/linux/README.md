@@ -62,11 +62,13 @@ sudo dnf remove sebtype
 
 `--undo-all` runs every undo below (`sudo dnf install` of Fcitx5's settings apps asks for your password). Then,
 with Fcitx5 stopped, it takes SebType's input method out of the groups in `~/.config/fcitx5/profile` and puts
-back what setup took out of them (English, Rime, Mozc, and the group's default input method) from the oldest copy
-of `profile` in `~/.local/share/sebtype/backup/`; groups and input methods added since setup stay (#611), and a
-group left empty, one setup made for SebType, goes. It puts back `config` and the add-ons' keys in `conf/`, and
-Mozc's `config1.db`, each from its oldest copy (#582), and Fcitx5's own tray; a file with no copy stays. Setups up
-to 0.2.0 kept no copy of `profile`: then add Rime back in Fcitx 5 Configuration after the removal. The backups move
+back what setup took out of each (English, Rime, Mozc, and its default input method) from the oldest copy of
+`profile` in `~/.local/share/sebtype/backup/` that has the group without SebType in it. Groups and input methods
+added since setup stay (#611); a group with nothing left goes, such as one setup made for SebType. It puts back
+`config` and the add-ons' keys in `conf/`, and Mozc's `config1.db`, each from its oldest copy (#582), and Fcitx5's
+own tray; a file with no copy stays. A group no copy has from before SebType (setups up to 0.2.0 kept no copy of
+`profile`, or the group was renamed since) gets nothing back, and goes if SebType's input method was all it had:
+`--undo-all` names it, and you add Rime back in Fcitx 5 Configuration after the removal. The backups move
 to `backup-until-<time>`, so a later install's are its own. If you removed and installed SebType again before
 0.3.0, the oldest copies may be from before the earlier install, not from just before this one.
 

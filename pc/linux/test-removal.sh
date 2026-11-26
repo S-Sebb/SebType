@@ -4,7 +4,8 @@
 # and Fcitx5 with fcitx5-rime; stopped at the end): the account has Fcitx5 groups of its own, this tree's RPM
 # is installed and sebtype-setup run, a group and an input method are added after setup, then sebtype-setup
 # --undo-all and dnf remove sebtype. Fcitx5's groups and keys must be the ones from before SebType with those
-# added since (#611), in the running Fcitx5 and on disk, and Fcitx5's settings apps back. The RPM is built on the host first (the session builds nothing).
+# added since (#611), in the running Fcitx5 and on disk, and Fcitx5's settings apps back. The RPM is built on
+# the host first (the session builds nothing).
 # One line per check in ~/t3-apps/SebType/scratch/<issue>/test-removal/results.txt, logs beside it.
 set -uo pipefail
 script=$(readlink -f "$0")
