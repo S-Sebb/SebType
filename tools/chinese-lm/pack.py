@@ -25,7 +25,8 @@ stop at the same character, and the rest of the word follows <E> as text. The sp
 teaches the <B> logit whether the text there ends a word (#502).
 LOADER of the examples also come as a segment of their own, as the loader writes one (zh_lm.cpp
 contextTokens()): <s>, the field's text before the span, its last CONTEXT characters, and the example, with no
-earlier example in it.
+earlier example in it. Each chat line's first clause also comes typed alone: <s> and its example, as the loader
+writes one in an empty field (ALONE).
 train.py doesn't train the model to predict the typed letters, only the span after <S> and the <E> closing it.
 Word boundaries are jieba's; they teach the <B> logit (tokenizer.py) for the next words after a commit.
 """
@@ -63,6 +64,10 @@ MAX_LETTERS = 64  # zh_lm.h's
 CONTEXT = 64  # zh_lm.cpp's CONTEXT_CHARS
 CUT = 0.2
 LOADER = 0.15
+# Chat lines whose first clause also comes typed alone, in an empty field. Without it 3 % of the examples have
+# no text before them, almost all Wikipedia's; LCCC's tens of millions of short turns gave r2 those of
+# everyday phrases, and #557's r3 lost the slips set's (buaoyisi → 不要太, not 不好意思) typed so.
+ALONE = 1.0
 WORKERS = 12
 
 sp = piece = None
@@ -134,7 +139,23 @@ def example(toks, wb, keys, words, cut):
         wb.append(2)
 
 
-def segment(rng, text, toks, wb, records):
+def span_at(words, w, at, n, clause_end, reading):
+    """The span of up to N words from word W (character AT) that fits its clause, MAX_SPAN and MAX_LETTERS, and
+    the word after it."""
+    span, k = "", w
+    while (
+        k < len(words)
+        and k < w + n
+        and at + len(span) + len(words[k]) <= min(clause_end[at], at + MAX_SPAN)
+        and None not in reading[at : at + len(span) + len(words[k])]
+        and len("".join(reading[at : at + len(span) + len(words[k])])) <= MAX_LETTERS
+    ):
+        span += words[k]
+        k += 1
+    return span, k
+
+
+def segment(rng, text, toks, wb, records, alone=False):
     words = list(jieba.cut(text))
     toks.append(BOS)
     wb.append(2)
@@ -145,6 +166,12 @@ def segment(rng, text, toks, wb, records):
         if not common.HAN.match(text[i]):
             end = i
         clause_end[i] = end
+    if alone and words and common.HAN.match(words[0][0]) and rng.random() < ALONE:
+        span, k = span_at(words, 0, 0, len(words), clause_end, reading)
+        if span:
+            rec, rb = [BOS], [2]
+            example(rec, rb, typed_for(rng, reading[: len(span)]), words[:k], 0)
+            records.append((rec, rb))
     at, w = 0, 0
     while w < len(words):
         word = words[w]
@@ -157,17 +184,7 @@ def segment(rng, text, toks, wb, records):
                 if r < 0.8
                 else len(words)
             )
-            span, k = "", w
-            while (
-                k < len(words)
-                and k < w + n
-                and at + len(span) + len(words[k]) <= min(clause_end[at], at + MAX_SPAN)
-                and None not in reading[at : at + len(span) + len(words[k])]
-                and len("".join(reading[at : at + len(span) + len(words[k])]))
-                <= MAX_LETTERS
-            ):
-                span += words[k]
-                k += 1
+            span, k = span_at(words, w, at, n, clause_end, reading)
             # Some spans end inside their last word, so that the <B> logit at a span's end learns from the
             # text whether a word ends there: were every span whole words, the letters running out would say.
             cut = 0
@@ -194,11 +211,11 @@ def segment(rng, text, toks, wb, records):
 
 
 def work(job):
-    lines, seed = job
+    lines, seed, chat = job
     rng = random.Random(seed)
     toks, wb, records = [], [], []
     for line in lines:
-        segment(rng, line.rstrip("\n"), toks, wb, records)
+        segment(rng, line.rstrip("\n"), toks, wb, records, chat)
     for rec, rb in records:
         toks += rec
         wb += rb
@@ -244,7 +261,7 @@ def jobs(corpus, split, seed, without):
             rng.shuffle(part)
             for i in range(0, len(part), 20000):
                 n += 1
-                yield part[i : i + 20000], seed * 1_000_003 + n
+                yield part[i : i + 20000], seed * 1_000_003 + n, name in SHARE
 
 
 def main(run, split, seed, *without):
