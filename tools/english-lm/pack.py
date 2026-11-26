@@ -105,6 +105,7 @@ SHORT = {
     "please": "pls",
     "okay": "ok",
     "thanks": "thx",
+    "text": "txt",  # the chat sources hardly write it, so typed alone it became text (#556)
     "tomorrow": "tmrw",
     "because": "cuz",
     "though": "tho",
