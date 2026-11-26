@@ -300,6 +300,59 @@ that stops earlier, or a smaller or more quantized model, and both change the re
    40.2 % with the model's own. A few measures fell by up to 1 point: abbreviations in chat re-ranked
    (31.2 → 30.2 %), typos with a neighbouring key (64.6 → 63.7 %).
 
+## The retrain without LCCC (#557, 2026-11-26)
+
+LCCC, the shipped model r2's chat source, is research-only by its authors' terms, so #557 retrained without it
+on the sources in `tools/chinese-lm/SOURCES.md`. The bar (`score.py --bar`): each set's first and top 3 at most
+2 points below the default branch's model, run beside it with the same code, and the per-key and next-word p95
+at most 1.25 times its own. The dev sets chose every change; the test sets were run only on candidates.
+
+| Round | Change | Dev slips first | What it found |
+|---|---|---|---|
+| r3 | the new chat sources, uncapped passes | 70.8 (r2 79.8) | the meetings read 47 times, Tatoeba 37: their dev loss rose from step 1500 (3.8 → 7.1 nats per character for the meetings), and the news and slips sets fell with it |
+| r4 | at most 1.5 passes per pack over a chat source, each line's first clause typed alone too | 75.6 | dev loss falls to the end (2.71); every test row passes but the slips (78.2 / 81.9 against 85.0 / 89.2) |
+| r5 | every chat clause typed alone, twice | 75.6 | no gain: the clauses typed alone weren't what was missing |
+| r6a | half the loader-shaped examples in an empty field (`EMPTY`) | 78.0 | the slips are typed in an empty field, and without LCCC only the chat clauses, 5 % of the text, ever came so |
+| r6 (r6b) | and up to 4 passes over a chat source | 81.0 | no source's dev loss rises (meetings 3.79, r2 4.40) |
+| r7a | up to 8 passes | 80.4 | no further gain; partial-news first 2.5 below r2 |
+| r7b | half the empty-field examples with a typo | 78.6 | worse |
+| r8 | r6's mix on 8B tokens (6 packs) instead of 4B | 79.8 | news up (abbr-news 47.0 → 53.5, long-news 33 → 40); slips as r6 |
+
+The next-word latency that seemed to rise was the machine's load: the same r2 measured 13.2 and 16.9 ms p95
+in two runs, r3 20.4 and then 14.3. So the bar now measures the reference beside the candidate.
+
+**#574 (dazhihuijia → 大指挥家) and the beam.** r6 scores 大指挥家 above 大致回家 for `dazhihuijia`, but the beam
+of 2 drops it after two syllables, its 大指 behind 大致 and 大智. A beam of 3 puts it on the first page (third),
+scores no dev set more than a point lower and raised long-typo-news by 3, at about 14 % more time per key (dev:
+p95 103 → 117 ms; on the test sets 117.8 ms beside the reference's 114.9 with the same beam). 40 other prefix +
+3-syllable words, built for this check, rank as with r2: 38 first.
+
+**r6 and r8 on the test sets, beside r2** (beam 3 for all; both passed every dev row):
+
+| Set | r6 first / top 3 | r8 first / top 3 | r2 first / top 3 |
+|---|---|---|---|
+| sent-chat | 82.0 / 92.1 | 82.6 / 92.2 | 74.2 / 82.3 |
+| sent-news | 81.2 / 89.6 | 81.1 / 89.8 | 79.0 / 86.8 |
+| abbr-news | **47.5** / 62.8 | 48.5 / **60.5** | 50.5 / 63.5 |
+| slips | **80.8 / 85.0** | **83.4 / 87.0** | 87.6 / 91.2 |
+| typo | 79.7 / 85.1 | 80.1 / 85.1 | 67.6 / 75.0 |
+| next-chat, next-news top 3 | 35.9, 26.2 | 35.6, 26.2 | 25.7, 26.8 |
+
+Every other row passes, latency included. The slips they miss are idioms and 一X就Y phrases typed with a slip
+(莫名其妙, 无可奈何, 心不在焉, 一看就懂, 一学就会), which neither the beam nor Rime's correction offers: the dev
+slips, other everyday phrases, have fewer idioms. Wikipedia, 94 % of the text, has few of them, and the chat
+sources are too small to read more often (r7a).
+
+**The owner's reported clauses** (`reported.tsv`, in sent-chat; the bar wants each first, #612): `chidesha` →
+吃的啥 is first on r2, r6 and r8. `linyutou` → 淋浴头 after 洗澡 is first on r6 and r8 (third on r2). Typed alone,
+r8 puts 林宇滔 first, a name from Wikipedia: phrase-level correction (#478) offers it for lin yu tao, and its
+plain-text log probability (−14.4, against −23.2 for 淋浴头) carries it over Rime's first. Leaving out the plain
+re-rank when nothing is before the cursor fixes it but costs 4.2 points of dev slips.
+
+**Where it stands.** No candidate passes every row: the slips and the alone 淋浴头 want the everyday phrases and
+idioms LCCC gave r2, which none of the cleared sources holds in number. The next lever is a source of them
+under an open licence, which is the owner's to choose (#557).
+
 ## Recommendation
 
 **Go on with the model, with its own candidates.** The gain is too big to leave: typos fixed 4 times as

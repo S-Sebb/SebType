@@ -3,13 +3,13 @@
 # (android/test/chinese-lm/make_sets.py --dev, in RUN_DIR/dev), the corpus, which leaves them and the test sets
 # out (overlap.py checks it), the dev slips (data/rime/bench/make-slips.py --dev), the tokenizer and the packed tokens.
 #
-#   tools/chinese-lm/prepare.sh RUN_DIR [TRAIN_SEEDS...]     (default seeds: 0 1 2, what config.json trains on)
+#   tools/chinese-lm/prepare.sh RUN_DIR [TRAIN_SEEDS...]     (default seeds: 0-5, what config.json trains on)
 #
 # A step's output is kept only while its inputs are the same (#557): each output has a .stamp next to it, the
 # hash of the code and data it was made from, and of the earlier outputs it read.
 set -euo pipefail
 run=$1; shift
-seeds=${*:-0 1 2}
+seeds=${*:-0 1 2 3 4 5}
 py="$HOME/scratch/SebType/cache/chinese-lm-venv/bin/python -I -W ignore"
 cd "$(dirname "$0")"
 d=$run/data harness=../../android/test/chinese-lm

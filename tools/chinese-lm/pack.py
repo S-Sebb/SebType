@@ -53,11 +53,12 @@ SHARE = {
     "kdconv": 0.01,
     "oasst2": 0.005,
 }
-# A chat source is read at most this often per pack, its share falling short: a run reads its 3 packs about 1.6
-# times, so about 4 MAX_PASSES times in all. #557's r3, uncapped, read the meetings 47 times and Tatoeba 37: their
-# dev loss rose from step 1500 (3.8 to 7.1 nats per character for the meetings, above a model's that never read
-# them), and with it the slips and news sets fell. At 1.5 (r4) the slips stayed 4 points below r2's on the dev
-# sets, at 4 (r6) they passed r2's, the news sets within a point.
+# A chat source is read at most this often per pack, its share falling short: r8 reads its 6 packs about 1.5
+# times, so up to 36 times in all (r3-r7: 3 packs, 1.6 times). #557's r3, uncapped, read the meetings 47 times
+# per run and Tatoeba 37: their dev loss rose from step 1500 (3.8 to 7.1 nats per character for the meetings,
+# above a model's that never read them), and with it the slips and news sets fell. At 1.5 (r4) the slips stayed
+# 4 points below r2's on the dev sets; at 4 (r6) they passed r2's, the news sets within a point, and no source's
+# dev loss rose; at 8 (r7a), nothing more.
 MAX_PASSES = 4
 EVERY = 30
 MAX_SPAN = 25

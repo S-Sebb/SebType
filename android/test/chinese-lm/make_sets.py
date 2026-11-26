@@ -40,7 +40,7 @@ CONTEXT = 64  # characters of the field's text kept before an item
 # wants each first (#612).
 REPORTED = [
     l.split("\t")
-    for l in (Path(__file__).parent / "sets/reported.tsv")
+    for l in (Path(__file__).parent / "reported.tsv")
     .read_text(encoding="utf-8")
     .splitlines()
 ]

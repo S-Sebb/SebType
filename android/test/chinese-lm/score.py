@@ -339,7 +339,7 @@ def bar(path):
         passed = (value - limit) * sign >= 0
         ok &= passed
         print(f"{'PASS' if passed else 'FAIL'} {name}: {value} (bar {round(limit, 2)})")
-    # The clauses the owner reported (sets/reported.tsv, in sent-chat) come first (#612).
+    # The clauses the owner reported (reported.tsv, in sent-chat) come first (#612).
     sets = Path(__file__).parent / "sets"
     items = [
         l.split("\t")
@@ -353,7 +353,9 @@ def bar(path):
     ]
     for context, text in (
         l.split("\t")
-        for l in (sets / "reported.tsv").read_text(encoding="utf-8").splitlines()
+        for l in (Path(__file__).parent / "reported.tsv")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ):
         row = next(r for i, r in zip(items, rows) if i[0] == context and i[2] == text)
         passed = row[0] == "0"
