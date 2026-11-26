@@ -1911,10 +1911,10 @@ undo_all() {
   touch "$fake/other-user"
   o=$(setup_cmd='bash setup-ime.sh' fake_run --undo-all < /dev/null); s=$?; rm "$fake/other-user"
   echo "$o"; cat "$c/profile"; ((s == 0)) || return 1
-  mine=$'[Groups/0]\nName=Mine\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=keyboard-us\n\n[Groups/0/Items/1]\nName=rime\n\n[Groups/0/Items/2]\nName=pinyin\n\n'
+  mine=$'[Groups/0]\nName=Mine\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[Groups/0/Items/2]\nName=pinyin\n\n'
   mine+=$'[Groups/1]\nName=sebtype\n\n[Groups/2]\nName=Later\n\n[Groups/2/Items/0]\nName=keyboard-de\n\n'
-  mine+=$'[Groups/3]\nName=Chinese\nDefaultIM=rime\n\n[Groups/3/Items/0]\nName=rime\n\n'
-  mine+=$'[Groups/4]\nName=Deutsch\n\n[Groups/4/Items/0]\nName=keyboard-de\n\n[Groups/4/Items/1]\nName=rime\n\n'
+  mine+=$'[Groups/3]\nName=Chinese\nDefaultIM=rime\n\n[Groups/3/Items/0]\nName=rime\nLayout=\n\n'
+  mine+=$'[Groups/4]\nName=Deutsch\n\n[Groups/4/Items/0]\nName=keyboard-de\n\n[Groups/4/Items/1]\nName=rime\nLayout=\n\n'
   mine+=$'[Groups/5]\nName=Solo\nDefault Layout=fr\nDefaultIM=keyboard-fr\n\n[Groups/5/Items/0]\nName=keyboard-fr\nLayout=\n\n'
   mine+=$'[GroupOrder]\n0=Mine\n1=sebtype\n2=Later\n3=Chinese\n4=Deutsch\n5=Solo'
   ! grep -q 'Virtual Keyboard\|log in again' <<<"$o" &&
@@ -1988,10 +1988,10 @@ undo_record() {
   mkdir -p "$h/dotfiles"; ln -s ../../dotfiles/profile "$p"
   o=$(run) || return 1; echo "$o"; [[ $(items 0) == sebtype ]] || return 1
   printf '\n[Groups/1]\nName=Chinese\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/1/Items/0]\nName=rime\nLayout=\n' >> "$p"
-  sed -i 's/^0=Default$/0=Default\n1=Chinese/' "$p"
+  sed -i --follow-symlinks 's/^0=Default$/0=Default\n1=Chinese/' "$p"
   mkdir "$h/.local/share/sebtype/backup/20000101-000000"; cp "$p" "$h/.local/share/sebtype/backup/20000101-000000/profile"
   printf 'Chinese\t0\trime\trime\n' >> "$h/.local/share/sebtype/backup/groups.tsv"
-  sed -i 's/^Name=rime$/Name=sebtype/; s/^DefaultIM=rime$/DefaultIM=sebtype/' "$p"
+  sed -i --follow-symlinks 's/^Name=rime$/Name=sebtype/; s/^DefaultIM=rime$/DefaultIM=sebtype/' "$p"
   cat "$p" "$h/.local/share/sebtype/backup/groups.tsv"
   o=$(run --undo-all) || return 1; echo "$o"; cat "$p"
   [[ -L $p && $(items 0) == rime ]] && grep -qx 'Name=Chinese' "$p" && ! grep -qx 'Name=Default' "$p" &&
