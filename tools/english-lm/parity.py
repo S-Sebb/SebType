@@ -1,5 +1,6 @@
 """Checks an exported GGUF against its checkpoint: the log probabilities the phone's scorer gave on a dev set
-(dev.sh's SET.dump, through llama.cpp) against the checkpoint's own for the same prompts, on the CPU.
+(dev.sh's SET.dump, through llama.cpp) against the checkpoint's own for the same prompts, on the CPU. Each
+word's pieces' alone: its score adds where it ends and a contraction's share, which no token gives (#609).
 
   parity.py CKPT_DIR SET.tsv SET.dump [ITEMS]     (default every item)
 
@@ -12,6 +13,7 @@ largest 0.50 over 280 scores (#556); quantising costs that much, a wrong export 
 
 import statistics
 import sys
+import unicodedata
 
 import sentencepiece as spm
 import torch
@@ -59,23 +61,26 @@ def main(ckpt, set_path, dump_path, items=None):
             i += 1
         d = dump[i]
         i += 1
-        # As sebtype_lm.cpp's score(): the context's last line, then the example, a capital at a sentence start.
+        # As sebtype_lm.cpp's score(): the context's last line, then the example, a capital at a sentence start
+        # or where the letters typed start with one (dev_sets.py types none all in capitals, which it reads
+        # otherwise), and the words folded to ASCII as the corpus was ("débuts": debuts).
         line = window(ctx.split("\n")[-1].rstrip(" "))
         end = ctx.rstrip(" \n")
-        capital = not end or end[-1] in ".!?\n"
+        capital = not end or end[-1] in ".!?\n" or typed[:1].isupper()
         prefix = [sp.bos_id()] + (sp.encode(line) if line else []) + [T]
         prefix += [
             sp.piece_to_id(c)
             for c in typed.lower()
             if c in "abcdefghijklmnopqrstuvwxyz'"
         ] + [S]
-        for k in range(3, len(d), 3):
-            w = d[k][0].upper() + d[k][1:] if capital else d[k]
+        for k in range(4, len(d), 5):  # sebtype.cpp's columns
+            w = "".join(c for c in unicodedata.normalize("NFKD", d[k]) if c.isascii())
+            w = w[0].upper() + w[1:] if capital else w
             ids = sp.encode(w)
             with torch.no_grad():
                 lsm = model(torch.tensor([prefix + ids])).logits[0].log_softmax(-1)
             lp = sum(lsm[len(prefix) - 1 + j, t].item() for j, t in enumerate(ids))
-            diffs.append(abs(lp - float(d[k + 2])))
+            diffs.append(abs(lp - float(d[k + 4])))
     median, worst = statistics.median(diffs), max(diffs)
     print(
         f"parity: {len(diffs)} scores, median |difference| {median:.3f}, largest {worst:.3f} nats"

@@ -2,6 +2,7 @@
 // candidates is the word meant by the letters typed so far.
 #pragma once
 
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -37,10 +38,12 @@ public:
     // hint, as all but a contraction of them are read, before that contraction and TYPED share their odds.
     // TYPED_KEPT: TYPED stays whatever it scores (a learned word), so where it ends isn't read unless a
     // contraction shares with it. TYPED_END, if given: the part of TYPED's score that is its ending there.
+    // PIECE_SCORES, if given: each word's pieces' log probabilities after the hint, summed, without its ending or a
+    // share: what the checkpoint gives for the same tokens (tools/english-lm/parity.py, #609).
     std::vector<float> score(const std::string &context, const std::string &typed,
                              const std::vector<std::string> &words, bool typedIsWord,
                              std::vector<float> *asTyped = nullptr, bool typedKept = false,
-                             float *typedEnd = nullptr);
+                             float *typedEnd = nullptr, std::vector<float> *pieceScores = nullptr);
 
     // The part of CONTEXT both read: its last line, the last 150 to 300 characters of it from a word's start,
     // starting where the last call's window started while that leaves 150 to 300 characters (#359).
@@ -53,10 +56,12 @@ private:
     const float *advance(const std::vector<int> &prefix);
     // Decodes each of FOLLOWERS on a sequence of its own, after sequence 0's tokens before its place in FROM
     // (empty: all of them), with logits only at the tokens READ marks, and returns their indices for
-    // llama_get_logits_ith. The branches are gone at the next call.
+    // branchLogits(). The branches are gone at the next call.
     std::vector<std::vector<int>> branch(const std::vector<std::vector<int>> &followers,
                                          const std::vector<size_t> &from,
                                          const std::vector<std::vector<bool>> &read);
+    // The logits after the token at index AT of branch()'s last call.
+    const float *branchLogits(int at);
     // What is read from a row of logits, in one pass over the vocabulary, which costs 0.5 ms on a phone's
     // little cores (#406): its normaliser, log P(the word before ends here), and the likeliest piece continuing
     // that word (-1 if none).
@@ -83,6 +88,8 @@ private:
     std::vector<int> mCached;            // the tokens sequence 0 holds
     std::string mWindow;                 // the last window read
     int mBranches = 0;                   // sequences 1..mBranches that branch() left
+    // The logits branch() read when its tokens took more than one batch, by index (empty: they are llama's).
+    std::map<int, std::vector<float>> mSplitLogits;
 };
 
 // The keyboard's strip and autocorrection from the decoder's candidates and the model's scores.

@@ -846,6 +846,28 @@ TEST(EnglishModel, TextReadsAsItsFoldedForm) {
   EXPECT_NEAR(lp[1], model.score("I", "dont", {"don't", "dont"}, false)[0], 0.02);
 }
 
+// Words that take more tokens than llama.cpp's batch are decoded in batches, each scored as in a smaller call:
+// three pairs of 26 letters but for an apostrophe, read with and without the typed letters' hint, took over 256
+// tokens and aborted on its assertion (#568).
+TEST(EnglishModel, WordsOverABatchScoreAsInSmallerCalls) {
+  sebtype_lm::Model model(EN_MODEL);
+  // An apostrophe after the first letter: the two share no pieces but that one (about 26 each).
+  const std::vector<std::vector<std::string>> pairs = {{"zqxjzqxjzqxjzqxjzqxjzqxjzq", "z'qxjzqxjzqxjzqxjzqxjzqxjzq"},
+                                                       {"xjzqxjzqxjzqxjzqxjzqxjzqxj", "x'jzqxjzqxjzqxjzqxjzqxjzqxj"},
+                                                       {"jzqxjzqxjzqxjzqxjzqxjzqxjz", "j'zqxjzqxjzqxjzqxjzqxjzqxjz"}};
+  std::vector<std::string> all;
+  for (const auto &p : pairs) all.insert(all.end(), p.begin(), p.end());
+  all.push_back("zq");
+  const auto lp = model.score("I said", "zq", all, false);
+  // Within a nat: over 26 pieces, batches of other sizes round each a little differently (0.07-0.2 in all); a
+  // row of logits read from the wrong token is off by tens.
+  for (size_t k = 0; k < pairs.size(); k++) {
+    const auto alone = model.score("I said", "zq", {pairs[k][0], pairs[k][1], "zq"}, false);
+    EXPECT_NEAR(lp[2 * k], alone[0], 1) << pairs[k][0];
+    EXPECT_NEAR(lp[2 * k + 1], alone[1], 1) << pairs[k][1];
+  }
+}
+
 // Next words are whole words (#561): a contraction is three pieces (▁didn ' t), and none ends in "'".
 TEST(EnglishModel, NextWordsAreWholeWordsContractionsToo) {
   sebtype_lm::Model model(EN_MODEL);

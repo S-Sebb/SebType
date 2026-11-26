@@ -2,9 +2,10 @@
 // finds the candidates for the typed letters, the model ranks them, decides the autocorrection and gives the
 // next words.
 //
-// With SEBTYPE_LM_DUMP=FILE, every call also appends what the model's ranking starts from, for
-// tools/english-lm/tune.py: context, typed, whether the typed word is a dictionary word, then per scored word
-// its text, the decoder's normalised score and the model's log probability.
+// With SEBTYPE_LM_DUMP=FILE, every call also appends decide()'s inputs, for tools/english-lm/tune.py to replay
+// it: context, typed, whether the typed word is a dictionary word, the typed word's ending term, then per scored
+// word its text, the decoder's normalised score, the model's log probability, the same read after the typed
+// letters' hint (AS_TYPED) and its pieces' alone, which tools/english-lm/parity.py checks the export by (#609).
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
@@ -49,16 +50,18 @@ public:
             candidates.push_back({w.word, mDecoder.normalizedScore(item.typed, w.word, w.score)});
         }
         const auto words = sebtype_lm::rankedWords(item.typed, candidates);
-        std::vector<float> asTyped;
+        std::vector<float> asTyped, pieces;
         float typedEnd = 0;
-        const auto logProbs = mModel.score(item.context, item.typed, words, typedIsWord, &asTyped, false, &typedEnd);
+        const auto logProbs =
+            mModel.score(item.context, item.typed, words, typedIsWord, &asTyped, false, &typedEnd, &pieces);
         if (mDump.is_open()) {
-            mDump << item.context << '\t' << item.typed << '\t' << typedIsWord;
+            mDump << item.context << '\t' << item.typed << '\t' << typedIsWord << '\t' << typedEnd;
             for (size_t i = 0; i < words.size(); i++) {
                 float decoder = 0;
                 for (const auto &c : candidates)
                     if (c.word == words[i]) decoder = std::max(decoder, c.decoderScore);
-                mDump << '\t' << words[i] << '\t' << decoder << '\t' << logProbs[i];
+                mDump << '\t' << words[i] << '\t' << decoder << '\t' << logProbs[i] << '\t' << asTyped[i] << '\t'
+                      << pieces[i];
             }
             mDump << '\n';
         }

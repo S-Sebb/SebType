@@ -329,20 +329,40 @@ std::vector<std::vector<int>> Model::branch(const std::vector<std::vector<int>> 
             index[i].push_back(it->second);
         }
     }
+    mSplitLogits.clear();
     if (tokens.empty()) return index;
-    llama_batch batch = llama_batch_init(tokens.size(), 0, mBranches);
-    for (size_t k = 0; k < tokens.size(); k++) {
-        batch.token[k] = tokens[k];
-        batch.pos[k] = pos[k];
-        batch.n_seq_id[k] = seqs[k].size();
-        for (size_t j = 0; j < seqs[k].size(); j++) batch.seq_id[k][j] = seqs[k][j];
-        batch.logits[k] = logits[k];
+    // Over the context's batch, which llama.cpp asserts a decode fits, the tokens go in batches one after
+    // another, each token after the ones it follows, and the logits read are kept from each: three pairs of
+    // 26 letters but for an apostrophe, read with and without a hint, took 300 tokens and aborted (#568).
+    const size_t nBatch = llama_n_batch(mCtx);
+    const bool split = tokens.size() > nBatch;
+    llama_batch batch = llama_batch_init(std::min(tokens.size(), nBatch), 0, mBranches);
+    for (size_t start = 0; start < tokens.size(); start += nBatch) {
+        batch.n_tokens = std::min(tokens.size() - start, nBatch);
+        for (int k = 0; k < batch.n_tokens; k++) {
+            const size_t t = start + k;
+            batch.token[k] = tokens[t];
+            batch.pos[k] = pos[t];
+            batch.n_seq_id[k] = seqs[t].size();
+            for (size_t j = 0; j < seqs[t].size(); j++) batch.seq_id[k][j] = seqs[t][j];
+            batch.logits[k] = logits[t];
+        }
+        if (llama_decode(mCtx, batch) != 0) {
+            llama_batch_free(batch);
+            throw std::runtime_error("sebtype-lm: decoding failed");
+        }
+        for (int k = 0; split && k < batch.n_tokens; k++)
+            if (logits[start + k]) {
+                const float *l = llama_get_logits_ith(mCtx, k);
+                mSplitLogits[start + k].assign(l, l + mVocabSize);
+            }
     }
-    batch.n_tokens = tokens.size();
-    const int status = llama_decode(mCtx, batch);
     llama_batch_free(batch);
-    if (status != 0) throw std::runtime_error("sebtype-lm: decoding failed");
     return index;
+}
+
+const float *Model::branchLogits(int at) {
+    return mSplitLogits.empty() ? llama_get_logits_ith(mCtx, at) : mSplitLogits.at(at).data();
 }
 
 Model::Row Model::row(const float *logits) const {
@@ -411,7 +431,7 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
     for (int depth = 1; !paths.empty(); depth++) {
         std::vector<Path> longer;
         for (const Path &p : paths) {
-            const float *after = llama_get_logits_ith(mCtx, p.at);
+            const float *after = branchLogits(p.at);
             const Row r = row(after);
             // A word can't end in an apostrophe: "don'" is half of "don't".
             if (p.word.back() != '\'') words.push_back({p.word, p.logProb + r.end});
@@ -465,7 +485,8 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
 
 std::vector<float> Model::score(const std::string &context, const std::string &typed,
                                 const std::vector<std::string> &words, bool typedIsWord,
-                                std::vector<float> *asTyped, bool typedKept, float *typedEnd) {
+                                std::vector<float> *asTyped, bool typedKept, float *typedEnd,
+                                std::vector<float> *pieceScores) {
     // Letters typed in capitals are read in small letters, as the model knows words best, and so is the text
     // before when its last word is in capitals too: "I FEEL ILL" as "i feel ill", "I SAID WHATS" as "i said
     // whats". Read in capitals the model hardly knows a contraction (WHAT'S), and with ill in small letters
@@ -594,9 +615,15 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
         }
     // Sequence 0's logits first: branch() decodes over them.
     const Row hint = row(logits);
+    std::vector<float> own(words.size(), 0);  // PIECE_SCORES
+    auto add = [&](size_t i, const Term &t, const float *after, const Row &r) {
+        const float lp = t.token < 0 ? ending(i, after, r) : logSoftmax(after, t.token, r);
+        out[i] += lp;
+        if (t.token >= 0 && i < own.size()) own[i] += lp;
+    };
     for (size_t i = 0; i < terms.size(); i++)
         for (const Term &t : terms[i])
-            if (t.after < 0) out[i] += t.token < 0 ? ending(i, logits, hint) : logSoftmax(logits, t.token, hint);
+            if (t.after < 0) add(i, t, logits, hint);
     float end = 0;  // the typed word's ending term
     std::vector<std::vector<bool>> read;  // the follower tokens whose logits a term reads
     for (size_t i = 0; i < followers.size(); i++) {
@@ -610,13 +637,14 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
         for (const Term &t : terms[i]) {
             if (t.after < 0) continue;
             const int at = index[i][t.after];
-            const float *after = llama_get_logits_ith(mCtx, at);
+            const float *after = branchLogits(at);
             auto it = rows.find(at);
             if (it == rows.end()) it = rows.emplace(at, row(after)).first;
-            out[i] += t.token < 0 ? ending(i, after, it->second) : logSoftmax(after, t.token, it->second);
+            add(i, t, after, it->second);
             if (t.token < 0 && i + 1 == words.size()) end = it->second.end;
         }
     if (typedEnd) *typedEnd = end;
+    if (pieceScores) *pieceScores = own;
     const std::vector<float> hinted = out;
     if (asTyped) asTyped->assign(hinted.begin(), hinted.begin() + words.size());
     // One share for all of them: shared pair by pair, the typed word and the same word in other capitals
