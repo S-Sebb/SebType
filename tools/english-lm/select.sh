@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Chooses a run's checkpoint on the dev sets: exports each of train.py's (every save_every steps, and the
-# last), runs dev.sh on it and prints tune.py's gain and the next-word top 3 per checkpoint, then the best:
+# last), runs dev.sh on it and prints tune.py's gain at the shipped weights and the next-word top 3 per
+# checkpoint, then the best:
 # the highest gain among the checkpoints whose next-chat, next-news and next-texts top 3 are each within
 # NEXT_MARGIN points of the best checkpoint's on that set (the gain counts typos only). On yanglab16.
 #
@@ -27,7 +28,7 @@ for ckpt in "$run"/ckpt/"$name"/step-* "$run/ckpt/$name"; do
     tail -n 20 "$gguf.dev.txt" >&2 || true
     continue
   fi
-  line="$(basename "$ckpt") $(sed -n 's/^GAIN //p' "$gguf.dev.txt") $(sed -n 's/^NEXT //p' "$gguf.dev.txt")"
+  line="$(basename "$ckpt") $(sed -n 's/^GAIN \([^ ]*\).*/\1/p' "$gguf.dev.txt") $(sed -n 's/^NEXT //p' "$gguf.dev.txt")"
   echo "$line" | tee -a "$results"
 done
 # Each line: checkpoint, gain, next-chat, next-news, next-texts top 3. The bests of the three sets may be

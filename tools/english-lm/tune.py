@@ -4,10 +4,11 @@
 
 DEV_DIR holds dev_sets.py's sets, dev.sh's SET.dump files (decide()'s inputs for each key, which the replay
 below runs the rule on) and the harness's results in out/, which the replay must commit at the shipped weights
-or tune.py stops. The weights that fix the most typos while changing no more correct words than MAX_CHANGED are printed,
-with their dev numbers; they go into sebtype_lm.cpp by hand. The typos: phone typos and misspellings, in text
+or tune.py stops. It prints the gain at the shipped weights (GAIN), then the weights that fix the most typos
+while changing no more correct words than MAX_CHANGED, with their dev numbers: a candidate for sebtype_lm.cpp,
+by hand, only once the harness's bar passes with it. The typos: phone typos and misspellings, in text
 messages too, contractions typed without their apostrophe, capitals, and bare forms that are words too, which
-are fixed by keeping them (#556). select.sh compares checkpoints by the same gain.
+are fixed by keeping them (#556). select.sh compares checkpoints by GAIN.
 """
 
 import functools
@@ -202,9 +203,15 @@ def main(dev):
                 best = (gain(r), params, r)
     if not best:
         sys.exit("no weights keep the changed correct words within the limit")
-    print("DECODER_WEIGHT, MARGIN_WORD, MARGIN_NON_WORD =", best[1])
-    print(f"GAIN {best[0]:.2f}")
-    print(f"SHIPPED {SHIPPED} GAIN {gain(evaluate(sets, SHIPPED)):.2f}")
+    # select.sh ranks checkpoints by GAIN, at the weights the keyboard ships: the grid's best is printed for
+    # information only. On r4 it was (0, 4, 1) at 113.38 against 107.45 shipped, and it missed two of the
+    # harness's bar rows (clean words changed 0.5 %, capitals lowercased 7), as the dev sets have no
+    # contractions set and their clean words are ones the model knows (#568).
+    print(f"GAIN {gain(evaluate(sets, SHIPPED)):.2f} at the shipped weights {SHIPPED}")
+    print(
+        "best on the dev sets: DECODER_WEIGHT, MARGIN_WORD, MARGIN_NON_WORD =", best[1]
+    )
+    print(f"  gain: {best[0]:.2f}")
     for k, v in best[2].items():
         print(f"  {k}: {v:.1f} %")
 
