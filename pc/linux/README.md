@@ -53,21 +53,23 @@ A step done stays on the page, ticked.
 
 ## Removing SebType
 
-What setup changed in this account stays after `sudo dnf remove sebtype` (#582). For Rime (#542): Fcitx5 then
-drops SebType's input method from its groups and deletes a group left empty. Setup and the Configurator's Use
-SebType keep a copy of `~/.config/fcitx5/profile`, Fcitx5's groups, in a folder of
-`~/.local/share/sebtype/backup/` named by its time before they change it (setups up to 0.2.0 kept none). To
-get Rime back:
+Undo setup's changes first, while SebType is still installed, then remove it:
 
-1. Stop Fcitx5: System Settings → Keyboard → Virtual Keyboard → None. Fcitx5 writes its groups over `profile`
-   when it quits, so it must not run while you copy.
-2. If a folder has `profile`, copy the oldest one to `~/.config/fcitx5/profile`: later ones hold groups SebType
-   had already changed. `LC_ALL=C ls ~/.local/share/sebtype/backup/*/profile | head -1` names it; if you
-   removed SebType before and its folders are still there, take the oldest made since you last installed it.
-   **Never remove `profile`**: with no copy, keep it as it is.
-3. Turn Virtual Keyboard back on (Fcitx 5), and add Rime back where you want it in Fcitx 5 Configuration.
-   Setup took Fcitx5's settings apps away: `sebtype-setup --undo-fcitx5` puts them back while SebType is
-   installed, and `sudo dnf install kcm-fcitx5 fcitx5-configtool` after.
+```sh
+sebtype-setup --undo-all
+sudo dnf remove sebtype
+```
+
+`--undo-all` runs every undo below (`sudo dnf install` of Fcitx5's settings apps asks for your password). Then,
+with Fcitx5 stopped, it puts back `~/.config/fcitx5/profile` (the groups), `config` and the add-ons' keys in `conf/`,
+and Mozc's `config1.db`, each from the oldest copy in `~/.local/share/sebtype/backup/` (#582), and Fcitx5's own
+tray. Changes made to them since setup, such as a group added, are lost; a file with no copy stays. Setups up to
+0.2.0 kept no copy of `profile`: then add Rime back in Fcitx 5 Configuration after the removal. The backups move
+to `backup-until-<time>`, so a later install's are its own.
+
+These stay: KWin's virtual keyboard (Fcitx 5), XMODIFIERS, the WeChat launcher fix, Alt+\` taken from Plasma's
+"Walk Through Windows of Current Application" (System Settings → Shortcuts → KWin), and Rime's Ctrl+Shift+F and 6
+candidates per page in `~/.local/share/fcitx5/rime/default.custom.yaml`.
 
 ## What it does, and why
 
@@ -270,6 +272,10 @@ text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` �
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
 icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's input method, with its own librime, without installing it:
 Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
+
+`test-removal.sh`, on yanglab16, removes SebType end to end in a kde-emu session of its own: an account with
+Fcitx5 groups of its own, this tree's RPM installed and set up, a group added, then `sebtype-setup --undo-all` and
+`dnf remove sebtype`; Fcitx5's groups and keys must be the account's own again, running and on disk.
 
 ## App checklist
 

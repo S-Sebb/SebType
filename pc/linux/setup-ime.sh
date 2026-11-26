@@ -2,7 +2,8 @@
 # SebType Linux setup: Fcitx5 input with SebType's input method (English, Chinese with Rime, Japanese with
 # Mozc, #190) in every app on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
-# Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-librime puts Fedora's
+# Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-all, run before
+# `dnf remove sebtype`, undoes it all, the account's Fcitx5 groups and keys included. --undo-librime puts Fedora's
 # librime back where SebType 0.2.0 or older installed its own build in its place. --undo-fcitx5 puts back Fcitx5's own settings (kcm-fcitx5,
 # fcitx5-configtool).
 # --undo-configurator removes the SebType Configurator app
@@ -15,16 +16,17 @@
 # installed, and the Configurator, the Chinese data and the keymap come from beside it.
 set -euo pipefail
 
-dry=0 undo_librime=0 undo_fcitx5=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
+dry=0 undo_all=0 undo_librime=0 undo_fcitx5=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
 case ${1-} in
   --dry-run) dry=1 ;;
+  --undo-all) undo_all=1 ;;
   --undo-librime) undo_librime=1 ;;
   --undo-fcitx5) undo_fcitx5=1 ;;
   --undo-configurator) undo_configurator=1 ;;
   --undo-names) undo_names=1 ;;
   --undo-chinese-data) undo_chinese_data=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-all | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
 here=$(dirname "$(readlink -f "$0")")
 checkout=0; [[ -f $here/../../linux/build.sh ]] && checkout=1
@@ -43,6 +45,113 @@ change() {
 }
 warn() { echo "warning: $1"; todo=$((todo + 1)); }
 save() { mkdir -p "$backup"; cp -p "$1" "$backup/"; }
+
+# KWin / Fcitx5 live-session helpers. KWin starts Fcitx5 as the Wayland input method (step 2).
+fcitx_desktop=/usr/share/applications/org.fcitx.Fcitx5.desktop
+kwin_reconfigure() {
+  local qdbus
+  qdbus=$(command -v qdbus6 || command -v qdbus-qt6 || true)
+  if [[ -n $qdbus ]]; then "$qdbus" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+  else busctl --user call org.kde.KWin /KWin org.kde.KWin reconfigure >/dev/null 2>&1 || true; fi
+}
+fcitx_on_dbus() { busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; }
+fcitx_under_kwin() {
+  local ppid
+  while read -r ppid; do
+    [[ -n $ppid && $(ps -o comm= -p "$ppid" 2>/dev/null || true) == kwin_wayland ]] && return 0
+  done < <(ps -o ppid= -C fcitx5 2>/dev/null || true)
+  return 1
+}
+wait_fcitx_up() {
+  local i
+  for ((i = 0; i < 25; i++)); do fcitx_on_dbus && return 0; sleep 0.2; done
+  fcitx_on_dbus
+}
+wait_fcitx_down() {
+  local i
+  for ((i = 0; i < 25; i++)); do ! fcitx_on_dbus && ! fcitx_under_kwin && return 0; sleep 0.2; done
+  ! fcitx_on_dbus
+}
+# Only the Fcitx5 that owns the session bus name, the one setup configures and restarts: another Fcitx5 of
+# this user (a test's private one, or the desktop's while setup configures a test account) isn't ours (#535).
+fcitx_has_deleted_libs() {
+  local pid
+  pid=$(busctl --user status org.fcitx.Fcitx5 2>/dev/null | sed -n 's/^PID=//p')
+  [[ -n $pid ]] && grep -qE '(sebtype\.so|librime\.so).* \(deleted\)$' "/proc/$pid/maps" 2>/dev/null
+}
+# KWin reads its input method when told kwinrc changed (--notify; Plasma 6.8 no longer at reconfigure).
+kwin_set_im() { kwriteconfig6 --notify --file kwinrc --group Wayland --key InputMethod "$1" && kwin_reconfigure; }
+# Stops Fcitx5 under KWin and starts it again. A command given runs while it is stopped, which it must be for
+# that: fails, running nothing, if Fcitx5 doesn't stop.
+kwin_restart_fcitx5() {
+  local s=0
+  (
+    restored=0
+    _restore_kwin_im() {
+      ((restored)) && return 0
+      restored=1
+      kwin_set_im "$fcitx_desktop"
+    }
+    trap '_restore_kwin_im || true' EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    kwin_set_im "" || true
+    if (($#)); then
+      wait_fcitx_down || { echo "error: Fcitx5 didn't stop under KWin" >&2; exit 1; }
+      "$@" || exit 1
+    else wait_fcitx_down || true; fi
+    _restore_kwin_im
+  ) || s=$?
+  wait_fcitx_up || true
+  return "$s"
+}
+kwin_runs_fcitx() {
+  command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/null 2>&1 &&
+    busctl --user status org.kde.KWin >/dev/null 2>&1 &&
+    [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) == "$fcitx_desktop" ]]
+}
+
+# --undo-all (#582), before `dnf remove sebtype`: the undos below, then, with Fcitx5 stopped (it writes its
+# groups over profile as it quits), Fcitx5's and Mozc's files back from the oldest backup that has each (later
+# ones hold files SebType had already changed) and Fcitx5's own tray. A file no backup has stays: it was new
+# with setup or already as setup wanted it. The backups move aside, so a later install's oldest are its own.
+# fcitx5-rime's Rime stays in the groups while SebType is installed, so Fcitx5 starts again at once.
+if ((undo_all)); then
+  for u in configurator names chinese-data fcitx5 librime; do "$0" "--undo-$u"; done
+  mozc=$config/mozc; [[ -d $HOME/.mozc ]] && mozc=$HOME/.mozc
+  backups=$data/sebtype/backup
+  put_back() {
+    local f b LC_COLLATE=C  # <time>/ before the Configurator's <time>_2/
+    for f in "$config/fcitx5/"{profile,config} "$config/fcitx5/conf/"{clipboard,unicode,quickphrase}.conf "$mozc/config1.db"; do
+      b=("$backups"/*/"${f##*/}")
+      [[ -f ${b[0]} ]] || continue
+      echo "change: put back $f from ${b[0]}"
+      mkdir -p "${f%/*}"; cp -p "${b[0]}" "$f"
+    done
+    f=$data/fcitx5/addon/notificationitem.conf
+    if grep -qx 'Library=sebtype' "$f" 2>/dev/null; then echo "change: remove SebType's tray $f"; rm "$f"; fi
+  }
+  b=("$backups"/*/profile); [[ -f ${b[0]} ]] ||
+    warn "no backup has Fcitx5's groups from before SebType (setup up to 0.2.0 kept none): once SebType is removed, add Rime back in Fcitx 5 Configuration"
+  if kwin_runs_fcitx; then
+    echo "change: stop Fcitx5 under KWin while its files go back, then start it again"
+    kwin_restart_fcitx5 put_back
+  else
+    if fcitx_on_dbus; then
+      echo "change: quit Fcitx5 while its files go back (it starts again at your next login)"
+      busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Exit
+      wait_fcitx_down || { echo "error: Fcitx5 didn't quit: nothing put back" >&2; exit 1; }
+    fi
+    put_back
+  fi
+  if [[ -d $backups ]]; then
+    echo "change: move $backups to $backups-until-${backup##*/}"
+    mv "$backups" "$backups-until-${backup##*/}"
+  fi
+  echo "SebType's changes are undone: remove it with 'sudo dnf remove sebtype'"
+  exit 0
+fi
 
 # SebType Configurator (#72, step 14): the app, its launcher and icon, and the Picnic candidate window
 # theme it installs when 主题 → 候选窗 is Picnic. The theme remembers the look it replaced.
@@ -239,67 +348,12 @@ if ((${#librime_pkgs[@]})); then
   fi
 fi
 
-# KWin / Fcitx5 live-session helpers.
-kwin_reconfigure() {
-  local qdbus
-  qdbus=$(command -v qdbus6 || command -v qdbus-qt6 || true)
-  if [[ -n $qdbus ]]; then "$qdbus" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
-  else busctl --user call org.kde.KWin /KWin org.kde.KWin reconfigure >/dev/null 2>&1 || true; fi
-}
-fcitx_on_dbus() { busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; }
-fcitx_under_kwin() {
-  local ppid
-  while read -r ppid; do
-    [[ -n $ppid && $(ps -o comm= -p "$ppid" 2>/dev/null || true) == kwin_wayland ]] && return 0
-  done < <(ps -o ppid= -C fcitx5 2>/dev/null || true)
-  return 1
-}
-wait_fcitx_up() {
-  local i
-  for ((i = 0; i < 25; i++)); do fcitx_on_dbus && return 0; sleep 0.2; done
-  fcitx_on_dbus
-}
-wait_fcitx_down() {
-  local i
-  for ((i = 0; i < 25; i++)); do ! fcitx_on_dbus && ! fcitx_under_kwin && return 0; sleep 0.2; done
-  ! fcitx_on_dbus
-}
-# Only the Fcitx5 that owns the session bus name, the one setup configures and restarts: another Fcitx5 of
-# this user (a test's private one, or the desktop's while setup configures a test account) isn't ours (#535).
-fcitx_has_deleted_libs() {
-  local pid
-  pid=$(busctl --user status org.fcitx.Fcitx5 2>/dev/null | sed -n 's/^PID=//p')
-  [[ -n $pid ]] && grep -qE '(sebtype\.so|librime\.so).* \(deleted\)$' "/proc/$pid/maps" 2>/dev/null
-}
-kwin_restart_fcitx5() {
-  (
-    restored=0
-    _restore_kwin_im() {
-      ((restored)) && return 0
-      restored=1
-      kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "$fcitx_desktop" || return 1
-      kwin_reconfigure
-    }
-    trap '_restore_kwin_im || true' EXIT
-    trap 'exit 129' HUP
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-    kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "" || true
-    kwin_reconfigure
-    wait_fcitx_down || true
-    _restore_kwin_im
-  )
-  wait_fcitx_up || true
-}
-
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
-fcitx_desktop=/usr/share/applications/org.fcitx.Fcitx5.desktop
 if command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/null 2>&1; then
   if [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) != "$fcitx_desktop" ]]; then
     if change "set KWin's virtual keyboard to Fcitx 5 in $config/kwinrc"; then
-      kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "$fcitx_desktop"
-      kwin_reconfigure
+      kwin_set_im "$fcitx_desktop"
       wait_fcitx_up || true
     fi
   fi
@@ -485,11 +539,6 @@ PY
 # 6b. If KDE KWin is managing Fcitx5 and Fcitx5 isn't running yet, doesn't know sebtype yet, or still
 # holds deleted sebtype/librime libraries from an upgrade, toggle KWin's Virtual Keyboard off and back on
 # so Fcitx5 starts fresh and loads SebType immediately without requiring a re-login (#442).
-kwin_runs_fcitx() {
-  command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/null 2>&1 &&
-    busctl --user status org.kde.KWin >/dev/null 2>&1 &&
-    [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) == "$fcitx_desktop" ]]
-}
 if ((!dry)) && kwin_runs_fcitx; then
   need_restart=0
   if ! fcitx_on_dbus; then
@@ -554,7 +603,7 @@ fcitx_profile=$config/fcitx5/profile
 removing=https://github.com/S-Sebb/SebType/blob/main/pc/linux/README.md#removing-sebtype
 first_rime=; [[ $(rime_groups | cut -f1) == 0* ]] &&
   first_rime=$'\n'"  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back"
-restore=" or restore profile from $backup, with Fcitx5 stopped"  # after first_rime, where a backup is made
+restore=", or run $0 --undo-all before removing SebType, which puts back profile from before it,"  # after first_rime, where a backup is made
 if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
   first_group=$(running_groups 1)  # a failed read stops setup, as a failed call does
   IFS=$'\x1f' read -r -a q <<<"$first_group"
