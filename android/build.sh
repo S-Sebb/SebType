@@ -7,8 +7,9 @@
 #   android/build.sh debug         debug arm64-v8a APK
 #   android/build.sh debug-x86_64  debug APK for an x86_64 emulator
 #   android/build.sh unit-tests    the app's unit tests (JVM, no device); no APK
-# A release is signed with the key in ~/.config/sebtype, which only nobara-pc has: elsewhere
-# SEBTYPE_UNSIGNED=1 builds it unsigned.
+# A release is signed with the key in ~/.config/sebtype (or SEBTYPE_KEY_DIR), which only nobara-pc has:
+# elsewhere SEBTYPE_UNSIGNED=1 builds it unsigned, and the test scripts point SEBTYPE_KEY_DIR at a test key
+# (tools/lib.sh's test_key, #603).
 # Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, under the machine's caps).
 # Each run copies its APKs, inside the lock, to a folder of its own in app/build/runs/, so builds run at the
 # same time in one checkout can't swap each other's APK (#182). Prints the APK path last.
@@ -41,7 +42,8 @@ signed=; [[ $kind == release ]] && signed=1
 if [[ -n $signed ]]; then
   VERSION_CODE=${VERSION_CODE:-$(git rev-list --first-parent --count HEAD)} VERSION_NAME=$(cat ../VERSION)
   [[ -n $unsigned || ( -f $keydir/sebtype-release.jks && -f $keydir/keystore.password ) ]] ||
-    { echo "build: keystore missing in $keydir" >&2; exit 1; }
+    { echo "build: SebType's release key isn't in $keydir: only nobara-pc has it, so a release is built there." \
+        "Elsewhere SEBTYPE_UNSIGNED=1 builds one unsigned; the test scripts sign theirs with a test key (tools/lib.sh test_key)" >&2; exit 1; }
 else VERSION_CODE=1 VERSION_NAME=$(cat ../VERSION)-dev; fi
 
 # Runs older than a day are gone: a caller uses its APK within minutes.

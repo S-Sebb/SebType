@@ -533,6 +533,7 @@ if [[ $mode == --soak-device ]]; then # SebType as installed by the last run
   cat "$results"; ! grep -q '^FAIL' "$results"; exit
 fi
 if [[ -z ${APK:-} ]]; then
+  test_key || exit 1
   APK=$(android/build.sh release 2> "$work/build.log" | tail -1)
   [[ -f $APK ]] || { echo "preflight: release build failed, see $work/build.log"; exit 1; }
 fi

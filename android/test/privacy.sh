@@ -7,6 +7,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
+test_key || exit 1
 
 out=$TASK_OUT; mkdir -p "$out"
 results=$out/test-privacy-results.txt; : > "$results"

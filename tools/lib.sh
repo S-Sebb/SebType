@@ -95,6 +95,31 @@ sccache_env() {
     SCCACHE_DIRECT=false SCCACHE_SERVER_UDS
 }
 
+# test_key: for the test scripts that build a release. Where SebType's key isn't (it stays on nobara-pc,
+# Decisions #2), SEBTYPE_KEY_DIR points at this machine's test key, CN=SebType test key, in the tests'
+# cache: made once, renamed into place whole so runs at the same time keep whichever got there first, and
+# never deleted, since parallel runs sign with it (#603). android/release.sh doesn't call it and refuses
+# that key. A key is its keystore and its password file. Prints the caller's preflight line when it fails.
+test_key() {
+  local dir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype} tmp
+  [[ -f $dir/sebtype-release.jks && -f $dir/keystore.password ]] && return
+  export SEBTYPE_KEY_DIR=$SCRATCH/cache/test-key
+  if [[ ! -f $SEBTYPE_KEY_DIR/sebtype-release.jks || ! -f $SEBTYPE_KEY_DIR/keystore.password ]]; then
+    [[ -x $JDK21/bin/keytool || $SEBTYPE_HOST != yanglab16* ]] || "$(dirname "${BASH_SOURCE[0]}")/android-tools.sh" >&2
+    mkdir -p "$SCRATCH/cache" && tmp=$(mktemp -d "$SCRATCH/cache/test-key.XXXXXX") ||
+      { echo "preflight: can't make a test key in $SCRATCH/cache"; return 1; }
+    head -c 24 /dev/urandom | base64 > "$tmp/keystore.password"
+    "$JDK21/bin/keytool" -genkeypair -keystore "$tmp/sebtype-release.jks" -storetype PKCS12 -alias sebtype \
+      -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=SebType test key" \
+      -storepass:file "$tmp/keystore.password" > "$tmp/keytool.log" 2>&1 ||
+      { echo "preflight: keytool couldn't make the test key, see $tmp/keytool.log"; return 1; }
+    # Another run's key, already in place, stays.
+    mv -T "$tmp" "$SEBTYPE_KEY_DIR" 2>/dev/null || rm -rf "$tmp"
+  fi
+  [[ -f $SEBTYPE_KEY_DIR/sebtype-release.jks && -f $SEBTYPE_KEY_DIR/keystore.password ]] ||
+    { echo "preflight: $SEBTYPE_KEY_DIR isn't a test key (a keystore and keystore.password); move it aside"; return 1; }
+}
+
 # build_lock MINUTES NAME CMD...: runs CMD in the shared build lock (one heavy SebType build at a time),
 # waiting up to an hour plus MINUTES for it, under the CPU and memory caps, at the lowest CPU and I/O
 # priority. The queue rank is DEVQ_RANK (default 2; it orders the queue, the lock is still one build at a
