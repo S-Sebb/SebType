@@ -63,16 +63,18 @@ sudo dnf remove sebtype
 `--undo-all` runs every undo below (`sudo dnf install` of Fcitx5's settings apps asks for your password). Then,
 with Fcitx5 stopped, it takes SebType's input method out of the groups in `~/.config/fcitx5/profile` and puts
 back what setup and the Configurator's Use SebType took out of each (English, Rime, Mozc, and its default input
-method). Each time they put SebType's input method in a group, they add a line to
-`~/.local/share/sebtype/backup/groups.tsv` with what they took out, and `--undo-all` puts back everything those
-lines name. Groups and input methods added since setup stay (#611). A group setup made goes if nothing else is in
-it. It puts back `config` and the add-ons' keys in `conf/`, and Mozc's `config1.db`, each from its oldest copy
-(#582), and Fcitx5's own tray; a file with no copy stays.
+method). Each time they put SebType's input method in a group, once the change is made, they add a line to
+`~/.local/share/sebtype/backup/groups.tsv` with what they took out (each with its layout) and the group's default
+before and after. `--undo-all` puts back everything those lines name, and the default if the group still has the
+one the change left. Groups and input methods added since setup stay (#611). A group setup made goes if nothing
+else is in it. It puts back `config` and the add-ons' keys in `conf/`, and Mozc's `config1.db`, each from its
+oldest copy (#582), and Fcitx5's own tray; a file with no copy stays.
 
-SebType 0.2.0 and older kept no such record: for those groups `--undo-all` takes what to put back from the newest
-copy of `profile` in `backup/` that has the group without SebType in it. A group no copy has (setups up to 0.2.0
-kept no copy of `profile`, or the group was renamed since) gets nothing back: `--undo-all` names it, a group left
-empty keeps its keyboard, and if it had Rime, you add Rime back in Fcitx 5 Configuration after the removal.
+SebType 0.2.0 and older kept no such record. For their groups `--undo-all` also puts back English, Rime and Mozc
+from the newest copy of `profile` in `backup/` that has the group without SebType in it, and the default from it
+when no record has one. A group neither has (setups up to 0.2.0 kept no copy of `profile`, or the group was
+renamed since) gets nothing back: `--undo-all` names it, a group left empty keeps its keyboard, and if it had Rime,
+you add Rime back in Fcitx 5 Configuration after the removal.
 
 The backups and the record move to `backup-until-<time>`, so a later install's are its own. If you removed and
 installed SebType again before 0.3.0, the oldest copies may be from before the earlier install, not from just

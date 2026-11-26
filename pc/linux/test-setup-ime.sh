@@ -1963,6 +1963,11 @@ else result SKIP undo-all-in-en-us-locale "needs the en_US.UTF-8 locale (glibc-l
 # (b) No profile, setup makes Default, a group Chinese with Rime added, then Use SebType (as linux.rs does
 # it: a backup, a line in the record, Rime out): Default, which setup made, goes quietly, and Chinese gets
 # Rime back. The profile is a link into the user's dotfiles, which stays a link.
+# (c) A group set up by SebType 0.2.0 (in a backup only, no record) and set up again since: the record's
+# input methods and the backup's keyboard-us and Rime come back, with the backup's default.
+# (d) Lines as Use SebType writes them: for a group named with a space (quoted in the profile, plain in the
+# record), Rime with its layout and the default Use SebType's change replaced, still current.
+# (e) A profile link with only setup's group: the link goes, the dotfiles' file stays.
 undo_record() {
   local f=$fake/record o p h
   run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$f" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
@@ -1972,7 +1977,7 @@ undo_record() {
   echo -n "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" > "$f/sebtype"
   echo -n "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" > "$f/librime"
   echo 'XMODIFIERS=@im=fcitx' > "$f/session-env"
-  for h in "$f/a" "$f/b"; do
+  for h in "$f/a" "$f/b" "$f/c" "$f/d" "$f/e"; do
     p=$h/.config/fcitx5/profile
     mkdir -p "$h/.config/fcitx5" "$h/.local/share" "$h/scratch/SebType/cache"; ln -sf "$rime_data" "$h/scratch/SebType/cache/"
   done
@@ -1990,12 +1995,31 @@ undo_record() {
   printf '\n[Groups/1]\nName=Chinese\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/1/Items/0]\nName=rime\nLayout=\n' >> "$p"
   sed -i --follow-symlinks 's/^0=Default$/0=Default\n1=Chinese/' "$p"
   mkdir "$h/.local/share/sebtype/backup/20000101-000000"; cp "$p" "$h/.local/share/sebtype/backup/20000101-000000/profile"
-  printf 'Chinese\t0\trime\trime\n' >> "$h/.local/share/sebtype/backup/groups.tsv"
+  printf 'Chinese\t0\trime\tsebtype\trime:\n' >> "$h/.local/share/sebtype/backup/groups.tsv"
   sed -i --follow-symlinks 's/^Name=rime$/Name=sebtype/; s/^DefaultIM=rime$/DefaultIM=sebtype/' "$p"
   cat "$p" "$h/.local/share/sebtype/backup/groups.tsv"
   o=$(run --undo-all) || return 1; echo "$o"; cat "$p"
   [[ -L $p && $(items 0) == rime ]] && grep -qx 'Name=Chinese' "$p" && ! grep -qx 'Name=Default' "$p" &&
-    [[ $(sed -n '/^\[GroupOrder\]/,$p' "$p") == $'[GroupOrder]\n0=Chinese' ]] && ! grep -q '^warning: no backup' <<<"$o"
+    [[ $(sed -n '/^\[GroupOrder\]/,$p' "$p") == $'[GroupOrder]\n0=Chinese' ]] && ! grep -q '^warning: no backup' <<<"$o" || return 1
+  h=$f/c p=$h/.config/fcitx5/profile
+  mkdir -p "$h/.local/share/sebtype/backup/20000101-000000"
+  printf '[Groups/0]\nName=Mine\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n' > "$h/.local/share/sebtype/backup/20000101-000000/profile"
+  printf '[Groups/0]\nName=Mine\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[Groups/0/Items/1]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Mine\n' > "$p"
+  o=$(run) || return 1; echo "$o"; [[ $(items 0) == sebtype ]] || return 1
+  o=$(run --undo-all) || return 1; echo "$o"; cat "$p"
+  [[ $(items 0) == 'mozc keyboard-us rime' ]] && grep -qx 'DefaultIM=rime' "$p" || return 1
+  h=$f/d p=$h/.config/fcitx5/profile
+  mkdir -p "$h/.local/share/sebtype/backup"
+  printf '[Groups/0]\nName="Work Chinese"\nDefault Layout=us\nDefaultIM=pinyin\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[Groups/0/Items/1]\nName=pinyin\nLayout=\n\n[GroupOrder]\n0="Work Chinese"\n' > "$p"
+  printf 'Work Chinese\t0\trime\tpinyin\tkeyboard-us: rime:de\n' > "$h/.local/share/sebtype/backup/groups.tsv"
+  o=$(run --undo-all) || return 1; echo "$o"; cat "$p"
+  [[ $(items 0) == 'keyboard-us rime pinyin' ]] && grep -qx 'DefaultIM=rime' "$p" && grep -qx 'Layout=de' "$p" &&
+    ! grep -q '^warning: no backup' <<<"$o" || return 1
+  h=$f/e p=$h/.config/fcitx5/profile
+  mkdir -p "$h/dotfiles"; ln -s ../../dotfiles/profile "$p"
+  o=$(run) || return 1; echo "$o"
+  o=$(run --undo-all) || return 1; echo "$o"
+  [[ ! -L $p && ! -e $p && -f $h/dotfiles/profile ]]
 }
 check undo-all-from-record undo_record
 
