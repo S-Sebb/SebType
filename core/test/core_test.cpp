@@ -657,7 +657,7 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
            // are a word: Ste and WOR aren't ste and wor.
            {"Show your ", "id", "ID "}, {"Enter your ", "id", "ID "}, {"Enter your user ", "id", "ID "},
            {"Bring your photo ", "id", "ID "}, {"If I were you ", "id", "I'd "}, {"Pretend you ", "ste", "are "},
-           {"At ", "wor", "work "},
+           {"At ", "wor", "work "}, {"", "Wat", "What "},  // WOR and wat left out of the dictionary (#561)
            {"", "camelCase", "camelCase "}, {"", "userId", "userId "}, {"the ", "turkey", "turkey "},
            {"it's ", "ok", "ok "}, {"with ", "mom", "mom "}, {"the ", "march", "march "}, {"lol ", "btw", "btw "},
            {"", "btw", "btw "}, {"", "fyi", "fyi "},
