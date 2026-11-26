@@ -6,10 +6,20 @@ to replace FUTO's `ml4_q6_k.gguf`. The phone runs it through `engines/sebtype-lm
 harness (`android/test/english/run.sh` with `SEBTYPE_MODEL`) measures it against the plan's quality bar, and
 [docs/perf/2026-11-15-english.md](../../docs/perf/2026-11-15-english.md) has the results.
 
-The committed model is r2, trained by this folder as of commit `15671d98` (before #266's sources). The folder now
-holds r3's recipe, which adds everyday sources and texting style; r3 fixed fewer misspellings than r2 and wasn't
-committed ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md#results-the-retrained-model-r3-2026-11-16)).
-r4's recipe (#556) fixes what made r2 and r3 write contractions, capitals and texted words wrong, below.
+The committed model is r5e (#556): r4 fine-tuned on this folder's data as of commit `2d4666bc`, with
+`config-r5e.json` (1,506 steps on 0.88B fresh tokens from `pack.py RUN_DIR train 5 0.2 0.4`, starting at r4's
+last learning rate). Its checkpoint at step 1,250 is `select.sh`'s pick (dev gain 107.77 at the shipped
+weights, r4's 107.45; GGUF sha256 `a27343797c2847951cf4d6089f48dd5db098896a14d737a19316c9bf4d55a1c3`). Its data
+differs from r4's in texting style: apostrophes are left out only in the letters typed, not in the text the
+model learns to predict (#561), and text is written txt; and a word's short form is never one of its typos, as
+the bank had txt for text (#556). A new model ships if it misses none of the harness's bar rows and gets more
+of its rows right than it loses against the committed one (#556).
+
+r4, trained as of `36be6045` (step 15,000; sha256 `ca19bde0037b5d1eb03cd10f70316de53a653bd25353e6d8649fa51e99f29cf1`),
+fixed what made r2 and r3 write contractions, capitals and texted words wrong. r2, trained as of `15671d98`, came
+before it; r3 added everyday sources and texting style but fixed fewer misspellings than r2 and wasn't committed
+([the report](../../docs/experiments/2026-11-16-english-everyday-text.md#results-the-retrained-model-r3-2026-11-16)).
+`engines/sebtype-lm/sebtype_lm.cpp`'s scoring was tuned on r4 (#561, #568).
 
 ## The model
 
@@ -89,6 +99,17 @@ tools/english-lm/prepare.sh RUN_DIR 0 1 2 &&
 python tools/english-lm/train.py RUN_DIR tools/english-lm/config.json &&
 tools/english-lm/select.sh RUN_DIR r4
 ```
+
+r5e, then, from that run's step 15,000 (`ckpt/r4/step-15000` in `RUN_DIR`), on a fresh pack:
+
+```sh
+python tools/english-lm/pack.py RUN_DIR train 5 0.2 0.4 &&
+python tools/english-lm/train.py RUN_DIR tools/english-lm/config-r5e.json &&
+tools/english-lm/select.sh RUN_DIR r5e
+```
+
+Training on a GPU isn't bit-exact: a rebuild's checkpoints differ a little. Two builds of r5c, the same recipe
+before the txt changes, picked step 1,000 and step 500 (dev gain 107.65 and 107.58).
 
 A model trained on the sources r2 didn't have (NUS SMS, Blended Skill Talk, Topical-Chat, Tatoeba) adds them to
 NOTICE's credits in the PR that ships it.

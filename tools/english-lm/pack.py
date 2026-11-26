@@ -27,8 +27,12 @@ train.py doesn't train the model to predict the example's own tokens, only the w
 SebType's loader writes the same example for each candidate and reads its probability.
 
 Texting style (#266): TEXTING of the chat sources' lines are written as people text: sentences start in
-lowercase, "I" and apostrophes are often dropped ("im", "dont"), a final full stop goes, and common words take
-their short forms ("u", "ur", "pls", "gonna"). The real messages in nus-sms show the model the true mix; this
+lowercase, "I" is often written small, a final full stop goes, and common words take
+their short forms ("u", "ur", "pls", "gonna"). Some leave out apostrophes too, but only in the letters they
+type: their examples' letters have none, while the text keeps its own. The text is what the model learns to
+predict, and with them left out there r4 read "so whats" as likely as "so what's" (5.03 and 5.07 nats), so
+the contraction's share of the odds (engines/sebtype-lm) kept whats; a fine-tune on this put what's 3.9 nats
+ahead (#561). The real messages in nus-sms show the model the true mix, apostrophes left out too; this
 gives it texting contexts from the much larger chat it already has. TEXTING was chosen on the dev sets
 (dev_sets.py's next-texts and text-typos); the optional arguments set it and scale the mix down for short
 trials:
@@ -101,6 +105,7 @@ SHORT = {
     "please": "pls",
     "okay": "ok",
     "thanks": "thx",
+    "text": "txt",  # the chat sources hardly write it, so typed alone it became text (#556)
     "tomorrow": "tmrw",
     "because": "cuz",
     "though": "tho",
@@ -180,7 +185,9 @@ def typed_for(rng, word, prefix=True, bare=False):
         w not in bank
     ):  # a word too rare for the bank: its typos made now, kept for the next time
         bank[w] = noise.variants(w)[1:]
-    phone, spell = bank[w]
+    # The bank lists txt among text's typos and abt among about's; someone typing a word's short form means it
+    # (#556), so it is never a typo of the word.
+    phone, spell = ([v for v in vs if v != SHORT.get(w)] for vs in bank[w])
     if "'" in w and (bare or rng.random() >= APOSTROPHE_TYPED):
         w = w.replace("'", "")
     r = rng.random()
@@ -222,7 +229,7 @@ class Texting:
         self.rng = rng
         self.lower_starts = rng.random() < 0.8
         self.lower_i = rng.random() < 0.5
-        self.drop_apostrophes = rng.random() < 0.5
+        self.drop_apostrophes = rng.random() < 0.5  # in the letters typed only
         self.drop_stop = rng.random() < 0.6
         self.short = rng.random() * 0.8
         self.tail = rng.choice((" lol", " haha", " :)")) if rng.random() < 0.05 else ""
@@ -235,8 +242,6 @@ class Texting:
             )
         if self.lower_i:
             s = re.sub(r"\bI\b", "i", s)
-        if self.drop_apostrophes:
-            s = re.sub(r"(?<=[A-Za-z])'(?=(?:t|m|re|ve|ll|d|s)\b)", "", s)
         if line_end and self.drop_stop:
             s = re.sub(r"(?<=[A-Za-z])\.$", "", s)
         s = SHORT_RE.sub(

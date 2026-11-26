@@ -2,9 +2,11 @@
 // finds the candidates for the typed letters, the model ranks them, decides the autocorrection and gives the
 // next words.
 //
-// With SEBTYPE_LM_DUMP=FILE, every call also appends what the model's ranking starts from, for
-// tools/english-lm/tune.py: context, typed, whether the typed word is a dictionary word, then per scored word
-// its text, the decoder's normalised score and the model's log probability.
+// With SEBTYPE_LM_DUMP=FILE, every call also appends decide()'s inputs, for tools/english-lm/tune.py to replay
+// it: context, typed, whether the typed word is a dictionary word, the typed word's ending term, the prompt's
+// token ids up to the hint's <S>, then per scored word its text, the decoder's normalised score, the model's
+// log probability, the same read after the typed letters' hint (AS_TYPED), its pieces' alone and their token
+// ids: tools/english-lm/parity.py reads those tokens with the checkpoint (#609). Token ids are space-separated.
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
@@ -49,18 +51,29 @@ public:
             candidates.push_back({w.word, mDecoder.normalizedScore(item.typed, w.word, w.score)});
         }
         const auto words = sebtype_lm::rankedWords(item.typed, candidates);
-        const auto logProbs = mModel.score(item.context, item.typed, words);
+        std::vector<float> asTyped;
+        sebtype_lm::PieceScores pieces;
+        float typedEnd = 0;
+        const auto logProbs =
+            mModel.score(item.context, item.typed, words, typedIsWord, &asTyped, false, &typedEnd, &pieces);
         if (mDump.is_open()) {
-            mDump << item.context << '\t' << item.typed << '\t' << typedIsWord;
+            const auto ids = [](const std::vector<int> &tokens) {
+                std::string s;
+                for (int t : tokens) s += (s.empty() ? "" : " ") + std::to_string(t);
+                return s;
+            };
+            mDump << item.context << '\t' << item.typed << '\t' << typedIsWord << '\t' << typedEnd << '\t'
+                  << ids(pieces.prompt);
             for (size_t i = 0; i < words.size(); i++) {
                 float decoder = 0;
                 for (const auto &c : candidates)
                     if (c.word == words[i]) decoder = std::max(decoder, c.decoderScore);
-                mDump << '\t' << words[i] << '\t' << decoder << '\t' << logProbs[i];
+                mDump << '\t' << words[i] << '\t' << decoder << '\t' << logProbs[i] << '\t' << asTyped[i] << '\t'
+                      << pieces.logProbs[i] << '\t' << ids(pieces.pieces[i]);
             }
             mDump << '\n';
         }
-        const auto ranked = sebtype_lm::decide(item.typed, candidates, typedIsWord, logProbs);
+        const auto ranked = sebtype_lm::decide(item.typed, candidates, typedIsWord, logProbs, false, asTyped, typedEnd);
         return {ranked.strip, ranked.committed};
     }
 

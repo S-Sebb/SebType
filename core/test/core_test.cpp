@@ -10,6 +10,9 @@
 #include <sebtype_lm.h>
 #endif
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
@@ -558,6 +561,131 @@ TEST_F(EnglishTest, SpaceCorrectsTyposAndKeepsWords) {
   EXPECT_EQ(en->takeCommit(), "pu ");
 }
 
+// #555: a word picked as typed is learned, and typed again a space keeps it, with the model as without it.
+TEST_F(EnglishTest, ALearnedWordTypedAgainStaysWithTheModel) {
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  // TYPED's list after CONTEXT, the model's ranking once it has come
+  const auto word = [&](const std::string &typed, const std::string &context = "so ") {
+    en->setContext(context);
+    for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
+    const int ranked = readyCount();
+    en->settle();
+    ASSERT_TRUE(ready(ranked));
+  };
+  const auto again = [&](const std::string &typed, const std::string &context = "so ") {
+    word(typed, context);
+    type(" ");
+    return en->takeCommit();
+  };
+  // dont and wontt, typed again right after they were learned: the 18 words the decoder's merge keeps were all
+  // their neighbours (don't, done, ...), not them, and they became don't and won't (#568).
+  for (const std::string learned : {"theyre", "dont", "wontt"}) {
+    word(learned);
+    en->selectAt(indexOf(learned));
+    EXPECT_EQ(en->takeCommit(), learned + " ");
+    EXPECT_EQ(again(learned), learned + " ");
+  }
+  // Learned in lower case, typed with a capital where a sentence starts, or in capitals (#568).
+  EXPECT_EQ(again("Theyre", ""), "Theyre ");
+  EXPECT_EQ(again("THEYRE"), "THEYRE ");
+  // Learned with capitals mid-sentence, as picked, and typed again in another case; and a capitalised word
+  // whose lower case is a dictionary word, typed again as learned (#568).
+  for (const std::string learned : {"SebType", "Cant", "Lets"}) {
+    word(learned, "I met ");
+    en->selectAt(indexOf(learned));
+    EXPECT_EQ(en->takeCommit(), learned + " ");
+    EXPECT_EQ(again(learned, "I met "), learned + " ");
+  }
+  // Typed in lower case, a word learned with capitals gets them, as a dictionary's name does (#568).
+  EXPECT_EQ(again("sebtype", "using "), "SebType ");
+  EXPECT_EQ(again("SEBTYPE", "using "), "SEBTYPE ");
+  // A word committed once as typed (right after a ".") isn't learned yet, so it is still corrected (#568).
+  EXPECT_EQ(again("tge", "see x."), "tge ");
+  EXPECT_EQ(again("tge", "I saw "), "the ");
+  // Learned with capitals inside, typed again as learned, and typed with a first capital where a sentence
+  // starts: iPhone, not IPhone (#568).
+  for (const std::string learned : {"DeShawn", "iPhone"}) {
+    word(learned, "I met ");
+    en->selectAt(indexOf(learned));
+    EXPECT_EQ(en->takeCommit(), learned + " ");
+    EXPECT_EQ(again(learned, "I met "), learned + " ");
+  }
+  EXPECT_EQ(again("Iphone", ""), "iPhone ");
+  // A word learned only in capitals says nothing of its small letters' spelling (#568).
+  word("ZORPS");
+  en->selectAt(indexOf("ZORPS"));
+  EXPECT_EQ(en->takeCommit(), "ZORPS ");
+  EXPECT_NE(again("zorps"), "ZORPS ");
+}
+
+// A contraction typed without its apostrophe after the words it follows, and a word of the same letters where
+// the text wants the word (#568). The bound that keeps "I feel ill" from I'll held could've to "couldve"'s
+// score, typed letters that aren't a word, and "could be" won; the dictionary's shortcut made "cant" can't
+// whatever came before.
+TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  for (const auto &[context, typed, committed] : std::vector<std::array<std::string, 3>>{
+           {"I ", "couldve", "could've "}, {"I hope ", "thatll", "that'll "}, {"I think ", "thatd", "that'd "},
+           {"I think ", "lets", "let's "}, {"So ", "whens", "when's "}, {"I ", "cant", "can't "},
+           // r5e's known misses (#556): "such cant", a noun, goes to the contraction; below, "Pretend you ste"
+           // keeps ste rather than are, and a bare btw becomes BTW.
+           {"I despise such ", "cant", "can't "}, {"Full of pious ", "cant", "cant "},
+           {"as is his ", "wont", "wont "},
+           // Typed letters that aren't a word share nothing with a word of theirs (there is none): daren't.
+           {"", "darent", "daren't "}, {"I said ", "shant", "shan't "}, {"I think ", "neednt", "needn't "},
+           {"I said ", "oclock", "o'clock "}, {"Thanks ", "alot", "a lot "},
+           // A capitalised word or one in capitals reads as its dictionary word does in lower case (#568).
+           {"", "Were", "Were "}, {"Hello. ", "Were", "Were "}, {"I FEEL ", "ILL", "ILL "},
+           {"I DESPISE SUCH ", "CANT", "CANT "}, {"AS IS HIS ", "WONT", "WONT "}, {"I ", "CANT", "CAN'T "},
+           {"", "Couldve", "Could've "},
+           // Letters that aren't a word go to their contraction, wherever it is (#568).
+           {"Please ", "dont", "don't "}, {"so ", "Dont", "Don't "},
+           // A name's possessive and words apart aren't contractions, and a name in small letters gets its
+           // capitals; a stray capital inside a word reads as its small letters; a typed word isn't lost to
+           // the longer word it starts (#568).
+           {"What ", "eas", "was "}, {"", "towords", "towards "}, {"on ", "ios", "iOS "}, {"with ", "john", "John "},
+           {"The ", "Id", "ID "}, {"I feel ", "iLl", "ill "}, {"I feel ", "IlL", "Ill "}, {"Sure, ", "hell", "hell "},
+           // Capitals inside a word whose small letters aren't one are meant, and a word typed in small letters
+           // keeps them unless the text clearly wants other capitals; a lone acronym isn't capitalised either
+           // where a sentence starts (#568).
+           {"", "DeShawn", "DeShawn "}, {"with ", "LeBron", "LeBron "}, {"on ", "iCloud", "iCloud "},
+           {"I use ", "ChatGPT", "ChatGPT "}, {"Freud wrote about the ego and the ", "id", "id "},
+           // The contraction's share goes to the typed letters' words together, and the same word in other
+           // capitals is weighed without the typed word's ending: main's ID (#568). Only where the typed letters
+           // are a word: Ste and WOR aren't ste and wor.
+           {"Show your ", "id", "ID "}, {"Enter your ", "id", "ID "}, {"Enter your user ", "id", "ID "},
+           {"Bring your photo ", "id", "ID "}, {"If I were you ", "id", "I'd "}, {"Pretend you ", "ste", "ste "},
+           {"At ", "wor", "work "}, {"", "Wat", "What "},  // WOR and wat left out of the dictionary (#561)
+           {"", "camelCase", "camelCase "}, {"", "userId", "userId "}, {"the ", "turkey", "turkey "},
+           {"it's ", "ok", "ok "}, {"with ", "mom", "mom "}, {"the ", "march", "march "}, {"lol ", "btw", "btw "},
+           {"", "btw", "BTW "}, {"", "fyi", "fyi "},
+           // Words and chat or code words the dictionary has stay, and letters that aren't a word go only to a
+           // common contraction, not h'm or ne'er (#568).
+           {"my ", "fiance", "fiance "}, {"", "bool", "bool "}, {"", "ssh", "ssh "}, {"", "impl", "impl "},
+           {"what's ", "ur", "ur "}, {"", "txt", "txt "}, {"I saw ", "hm", "him "}, {"I ", "hm", "hm "},
+           {"", "Hm", "Hm "}, {"that's ", "goos", "good "}, {"You are ", "goos", "good "}, {"", "neer", "neer "},
+           // A word another continues and the word continuing it are read alike, both to their ends (#568).
+           {"", "proffession", "profession "},
+           // A typo's words that differ only by an apostrophe share as the typed word and its contraction do,
+           // and a shortcut a typo reaches is capped (were -> we're); a word in capitals alone is no contraction
+           // (#556).
+           {"Why ", "wer", "were "}, {"", "yeras", "years "}, {"", "steriods", "steroids "}, {"", "ID", "ID "},
+           {"", "ILL", "ILL "}}) {
+    en->setContext(context);
+    for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
+    const int ranked = readyCount();
+    en->settle();
+    ASSERT_TRUE(ready(ranked));
+    const auto shown = list();
+    type(" ");
+    EXPECT_EQ(en->takeCommit(), committed) << context << typed << " " << testing::PrintToString(shown);
+  }
+}
+
 // A letter shows the decoder's strip at once and the model ranks it on the worker (#310); a space typed
 // right after the letters, before that ranking has come, waits for it and corrects by the model.
 TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
@@ -565,6 +693,7 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
   type("waht ");
   EXPECT_EQ(en->takeCommit(), "want ");  // the decoder's rule
   start();
+  en->setContext("so ");  // with no text before it, r4 and r5e keep "waht" (#556)
   type("a");
   en->key({0xff08, 0, false});
   ASSERT_TRUE(ready(0));
@@ -576,6 +705,7 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
 // the model's ranking, expected within the hold, takes its place.
 TEST_F(EnglishTest, AKeyChangesTheListOnceToTheModelsRanking) {
   start(EN_MODEL, std::chrono::milliseconds(50));
+  en->setContext("so ");  // with no text before it, r4 and r5e keep "waht" (#556)
   type("a");
   en->key({0xff08, 0, false});
   ASSERT_TRUE(ready(0));
@@ -661,6 +791,145 @@ TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
   en->setContext("Thank you very much. See you ");
   ASSERT_TRUE(ready(readies));
   EXPECT_FALSE(lists("much"));
+  // A word the model ran on to that no dictionary has isn't offered (#568).
+  const int before = readyCount();
+  en->setContext("Thank you thank ");
+  ASSERT_TRUE(ready(before));
+  EXPECT_FALSE(lists("youin")) << testing::PrintToString(list());
+  // A word in capitals is the dictionary's in any case: I'M is I'm (#568).
+  const int shouted = readyCount();
+  en->setContext("I KNOW. ");
+  ASSERT_TRUE(ready(shouted));
+  EXPECT_TRUE(lists("I'M")) << testing::PrintToString(list());
+}
+
+// A word longer than any the dictionary has isn't ranked by the model, whose batch it overran, and stays (#568).
+TEST_F(EnglishTest, AWordLongerThanTheDictionarysStaysAsTyped) {
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  en->setContext("so ");
+  const std::string word(1100, 'a');
+  type(word + " ");
+  EXPECT_EQ(en->takeCommit(), word + " ");
+}
+
+// A word's score ends it (#561): without that, "don" scored at least as well as "don't" (▁don ' t), whose
+// pieces it starts, whatever was typed.
+TEST(EnglishModel, AWordsScoreEndsItSoItLosesToTheLongerWordItStarts) {
+  sebtype_lm::Model model(EN_MODEL);
+  const auto lp = model.score("I", "dont", {"don", "don't"}, false);
+  EXPECT_LT(lp[0], lp[1]);
+}
+
+// The text before the cursor reads as training's text was folded (#568): a no-break space, an ellipsis or a
+// character cut at the window's start as their plain forms, also where a sentence starts.
+TEST(EnglishModel, TextReadsAsItsFoldedForm) {
+  sebtype_lm::Model model(EN_MODEL);
+  const auto same = [&](const std::string &context, const std::string &plain) {
+    const auto a = model.score(context, "dont", {"don't", "dont"}, false);
+    const auto b = model.score(plain, "dont", {"don't", "dont"}, false);
+    for (size_t i = 0; i < a.size(); i++) EXPECT_NEAR(a[i], b[i], 0.02) << context;
+    const auto x = model.nextWords(context, 3), y = model.nextWords(plain, 3);
+    ASSERT_EQ(x.size(), y.size()) << context;
+    for (size_t i = 0; i < x.size(); i++) EXPECT_EQ(x[i].word, y[i].word) << context;
+  };
+  same("Hello.\u00a0", "Hello.");
+  same("Hello.\u202f", "Hello. ");
+  same("Wait\u2026 ", "Wait... ");
+  same("\x80Hello.", "Hello.");
+  // Text in capitals reads in small letters once folded: I FÉEL as I FEEL, not "i f\u00c9el" (#568).
+  const auto a = model.score("I F\u00c9EL ", "ILL", {"I'LL", "ILL"}, true);
+  const auto b = model.score("I FEEL ", "ILL", {"I'LL", "ILL"}, true);
+  for (size_t i = 0; i < a.size(); i++) EXPECT_NEAR(a[i], b[i], 0.02);
+  // A word with no pieces (an emoji folds to nothing) scores nothing, and leaves the others as they were.
+  const auto lp = model.score("I", "dont", {"\U0001F600", "don't", "dont"}, false);
+  EXPECT_EQ(lp[0], -INFINITY);
+  EXPECT_NEAR(lp[1], model.score("I", "dont", {"don't", "dont"}, false)[0], 0.02);
+}
+
+// Words that take more tokens than llama.cpp's batch are decoded in batches, each scored as in a smaller call:
+// three pairs of 26 letters but for an apostrophe, read with and without the typed letters' hint, took over 256
+// tokens and aborted on its assertion (#568).
+TEST(EnglishModel, WordsOverABatchScoreAsInSmallerCalls) {
+  sebtype_lm::Model model(EN_MODEL);
+  // An apostrophe after the first letter: the two share no pieces but that one (about 26 each).
+  const std::vector<std::vector<std::string>> pairs = {{"zqxjzqxjzqxjzqxjzqxjzqxjzq", "z'qxjzqxjzqxjzqxjzqxjzqxjzq"},
+                                                       {"xjzqxjzqxjzqxjzqxjzqxjzqxj", "x'jzqxjzqxjzqxjzqxjzqxjzqxj"},
+                                                       {"jzqxjzqxjzqxjzqxjzqxjzqxjz", "j'zqxjzqxjzqxjzqxjzqxjzqxjz"}};
+  std::vector<std::string> all;
+  for (const auto &p : pairs) all.insert(all.end(), p.begin(), p.end());
+  all.push_back("zq");
+  const auto lp = model.score("I said", "zq", all, false);
+  // Within a nat: over 26 pieces, batches of other sizes round each a little differently (0.07-0.2 in all); a
+  // row of logits read from the wrong token is off by tens.
+  for (size_t k = 0; k < pairs.size(); k++) {
+    const auto alone = model.score("I said", "zq", {pairs[k][0], pairs[k][1], "zq"}, false);
+    EXPECT_NEAR(lp[2 * k], alone[0], 1) << pairs[k][0];
+    EXPECT_NEAR(lp[2 * k + 1], alone[1], 1) << pairs[k][1];
+  }
+}
+
+// Next words are whole words (#561): a contraction is three pieces (▁didn ' t), and none ends in "'".
+TEST(EnglishModel, NextWordsAreWholeWordsContractionsToo) {
+  sebtype_lm::Model model(EN_MODEL);
+  bool contraction = false;
+  for (const auto &w : model.nextWords("Sorry I", 5)) {
+    EXPECT_NE(w.word.back(), '\'') << w.word;
+    contraction |= w.word.find('\'') != std::string::npos;
+  }
+  EXPECT_TRUE(contraction);
+  EXPECT_TRUE(model.nextWords("Sorry I", 0).empty());  // its 3rd best was read before the 0th (#568)
+  // The pronoun is a capital, though chats taught the model a small one (#568).
+  const auto words = model.nextWords("lol :) ", 3);
+  EXPECT_TRUE(std::ranges::any_of(words, [](const auto &w) { return w.word == "I"; }));
+  EXPECT_FALSE(std::ranges::any_of(words, [](const auto &w) { return w.word == "i"; }));
+  // Text in capitals reads as small letters, and its next words are whole words in capitals: read as it
+  // was, they were pieces (OF|THE|BY|E|EN, #568).
+  for (const auto &w : model.nextWords("I THINK ", 5)) {
+    EXPECT_TRUE(std::ranges::none_of(w.word, [](unsigned char c) { return std::islower(c); })) << w.word;
+    EXPECT_TRUE(w.word.size() > 1 || w.word == "I" || w.word == "A") << w.word;
+  }
+  // A quote before I, and a lone acronym, aren't text in capitals; and only the last line, which the model
+  // reads, says whether its text is (#568).
+  const auto small = [&](const std::string &context) {
+    return std::ranges::any_of(model.nextWords(context, 5), [](const auto &w) {
+      return std::ranges::any_of(w.word, [](unsigned char c) { return std::islower(c); });
+    });
+  };
+  for (const std::string context : {"\u201cI ", "OK ", "OK. "}) EXPECT_TRUE(small(context)) << context;
+  // Next words are pruned against the 3 the strip shows; a word whose longer reading was cut there isn't
+  // offered in its place ("don" for don't, #568).
+  for (const auto &w : model.nextWords("\u201cI ", 5)) EXPECT_NE(w.word, "don");
+  EXPECT_FALSE(small("DON'T ")) << "DON'T";
+  for (const std::string line : {"I THINK ", "THINK "}) {
+    std::vector<std::string> alone, after;
+    for (const auto &w : model.nextWords(line, 5)) alone.push_back(w.word);
+    for (const auto &w : model.nextWords("hello\n" + line, 5)) after.push_back(w.word);
+    EXPECT_EQ(after, alone) << line;
+  }
+}
+
+// decide() corrects one letter only to its capital (i to I, #561), and never a word only learned (#555).
+TEST(EnglishDecide, ALoneLetterGetsOnlyItsCapitalAndALearnedWordStays) {
+  const std::vector<sebtype_lm::Candidate> i{{"I", 1}, {"in", 1}};
+  EXPECT_EQ(sebtype_lm::decide("i", i, false, {-1, -20, -30}).committed, "I");
+  EXPECT_EQ(sebtype_lm::decide("i", i, false, {-20, -1, -30}).committed, "i");
+  const std::vector<sebtype_lm::Candidate> theyre{{"there", 0.3f}, {"theyre", 1}};
+  EXPECT_EQ(sebtype_lm::decide("theyre", theyre, true, {-0.1f, -13}).committed, "there");
+  EXPECT_EQ(sebtype_lm::decide("theyre", theyre, true, {-0.1f, -13}, true).committed, "theyre");
+  // One letter is one however many bytes it takes ("so é" became "we", #568).
+  EXPECT_EQ(sebtype_lm::decide("é", {{"we", 1}}, false, {-1, -30}).committed, "é");
+  // A name's possessive and words apart aren't a contraction of the letters typed: "What eas" was Ea's (#568).
+  const std::vector<sebtype_lm::Candidate> eas{{"was", 1}, {"Ea's", 1}};
+  EXPECT_EQ(sebtype_lm::decide("eas", eas, false, {-1, -2, -30}).committed, "was");
+  // Only a common contraction keeps the other words from letters that aren't one: h'm isn't (#568).
+  EXPECT_EQ(sebtype_lm::decide("hm", {{"him", 1}, {"h'm", 1}}, false, {-3, -4, -14}).committed, "him");
+  // The word typed in other capitals needs a dictionary word's margin when typed in small letters ("the
+  // turkey" was Turkey, ok OK), and none after a typed first capital ("The Id": ID, #568).
+  const std::vector<sebtype_lm::Candidate> id{{"ID", 1}, {"id", 1}};
+  EXPECT_EQ(sebtype_lm::decide("id", id, true, {-1, -4}).committed, "id");
+  EXPECT_EQ(sebtype_lm::decide("Id", {{"ID", 1}, {"Id", 1}}, true, {-1, -1.5f}).committed, "ID");
 }
 
 // The model reads a window of the text before the cursor whose start stays put while the text grows, so a

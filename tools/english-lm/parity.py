@@ -1,5 +1,6 @@
 """Checks an exported GGUF against its checkpoint: the log probabilities the phone's scorer gave on a dev set
-(dev.sh's SET.dump, through llama.cpp) against the checkpoint's own for the same prompts, on the CPU.
+(dev.sh's SET.dump, through llama.cpp) against the checkpoint's own for the same tokens, on the CPU. Each
+word's pieces' alone: its score adds where it ends and a contraction's share, which no token gives (#609).
 
   parity.py CKPT_DIR SET.tsv SET.dump [ITEMS]     (default every item)
 
@@ -13,28 +14,16 @@ largest 0.50 over 280 scores (#556); quantising costs that much, a wrong export 
 import statistics
 import sys
 
-import sentencepiece as spm
 import torch
 from transformers import LlamaForCausalLM
 
 MEDIAN, WORST = 0.15, 1.5
-CONTEXT_CHARS, CONTEXT_STEP = 300, 150  # sebtype_lm.cpp's
-
-
-def window(line):
-    """sebtype_lm.cpp's window() of a context line, when the last window isn't in it (the first key of an
-    item whose line no earlier item had; later keys keep that window)."""
-    if len(line) <= CONTEXT_CHARS:
-        return line
-    space = line.find(" ", len(line) - (CONTEXT_CHARS - CONTEXT_STEP))
-    return "" if space < 0 else line[space + 1 :]
+CONTEXT_CHARS = 300  # sebtype_lm.cpp's
 
 
 def main(ckpt, set_path, dump_path, items=None):
     torch.set_num_threads(8)
-    sp = spm.SentencePieceProcessor(model_file=f"{ckpt}/tokenizer.model")
     model = LlamaForCausalLM.from_pretrained(ckpt, torch_dtype=torch.float32).eval()
-    T, S = sp.piece_to_id("<T>"), sp.piece_to_id("<S>")
     rows = [l.split("\t") for l in open(set_path).read().splitlines()][
         : int(items or 1e9)
     ]
@@ -59,23 +48,17 @@ def main(ckpt, set_path, dump_path, items=None):
             i += 1
         d = dump[i]
         i += 1
-        # As sebtype_lm.cpp's score(): the context's last line, then the example, a capital at a sentence start.
-        line = window(ctx.split("\n")[-1].rstrip(" "))
-        end = ctx.rstrip(" \n")
-        capital = not end or end[-1] in ".!?\n"
-        prefix = [sp.bos_id()] + (sp.encode(line) if line else []) + [T]
-        prefix += [
-            sp.piece_to_id(c)
-            for c in typed.lower()
-            if c in "abcdefghijklmnopqrstuvwxyz'"
-        ] + [S]
-        for k in range(3, len(d), 3):
-            w = d[k][0].upper() + d[k][1:] if capital else d[k]
-            ids = sp.encode(w)
+        # The tokens score() read, as sebtype.cpp dumps them: the prompt up to the hint's <S>, then per word its
+        # pieces. Rebuilt here instead, they missed score()'s folding and small letters ("I FÉEL ILL", #568).
+        prompt = [int(t) for t in d[4].split()]
+        for k in range(5, len(d), 6):  # sebtype.cpp's columns
+            ids = [int(t) for t in d[k + 5].split()]
+            if not ids:  # a word with no pieces (an emoji), which score() doesn't read
+                continue
             with torch.no_grad():
-                lsm = model(torch.tensor([prefix + ids])).logits[0].log_softmax(-1)
-            lp = sum(lsm[len(prefix) - 1 + j, t].item() for j, t in enumerate(ids))
-            diffs.append(abs(lp - float(d[k + 2])))
+                lsm = model(torch.tensor([prompt + ids])).logits[0].log_softmax(-1)
+            lp = sum(lsm[len(prompt) - 1 + j, t].item() for j, t in enumerate(ids))
+            diffs.append(abs(lp - float(d[k + 4])))
     median, worst = statistics.median(diffs), max(diffs)
     print(
         f"parity: {len(diffs)} scores, median |difference| {median:.3f}, largest {worst:.3f} nats"
