@@ -1220,7 +1220,7 @@ both_rimes() {
   mv "$fake/group.kept" "$fake/group" 2>/dev/null; mv "$fake/sebtype.kept" "$fake/sebtype" 2>/dev/null
   ((rc == 0)) &&
     grep -q "^change: make SebType's input method the one in Fcitx5 input method group 默认, .*)$" <<<"$o" &&
-    grep -q "^  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back, or run .*setup-ime.sh --undo-all before removing SebType, which puts back profile from before it, as https://.*#removing-sebtype says$" <<<"$o" &&
+    grep -q "^  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back, or run .*setup-ime.sh --undo-all before removing SebType to get back your groups from before it (see https://.*#removing-sebtype)$" <<<"$o" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o") == 1 ]] &&
     grep -qF "warning: Rime in input method group \"My \"Rime\" =1\" won't type Chinese while SebType is installed. Type Chinese with SebType's 中文: Use SebType on SebType Configurator's About page puts it in Rime's place and keeps the other input methods. Or remove the group: busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 RemoveInputMethodGroup s My\\ \\\"Rime\\\"\\ =1" <<<"$o" &&
     grep -q 'SetInputMethodGroupInfo ssa(ss) 默认 us 1 sebtype $' "$fake/set.log" &&
@@ -1826,18 +1826,29 @@ EOF
 check offline-profile-update offline_profile
 
 # --undo-all (#582): the undos, then, with Fcitx5 stopped under KWin, each of profile, config, the add-on key
-# files and Mozc's config1.db back from the oldest backup that has it (one no backup has stays), Fcitx5's own
-# tray back, the backups moved aside and KWin's input method back. An Fcitx5 that doesn't stop gets nothing
-# put back.
+# files and Mozc's config1.db back from the oldest backup that has it (one no backup has stays; <time>/ before
+# the Configurator's <time>_2/ whatever the locale), Fcitx5's own tray back, the backups moved aside and KWin's
+# input method back. An Fcitx5 that keeps its bus name, or drops it and still runs, gets nothing put back; a
+# copy that fails fails the undo and keeps the backups.
 undo_all() {
   local b=$h/.local/share/sebtype/backup c=$h/.config/fcitx5 o
-  mkdir -p "$b/20000101-000000" "$b/20000102-000000"
-  printf '[Groups/0]\nName=Mine\n' > "$b/20000101-000000/profile"; echo later > "$b/20000102-000000/profile"
+  mkdir -p "$b/20000101-000000" "$b/20000101-000000_2" "$b/20000102-000000"
+  printf '[Groups/0]\nName=Mine\n' > "$b/20000101-000000/profile"; echo later > "$b/20000101-000000_2/profile"
+  echo later > "$b/20000102-000000/profile"
   printf '[Hotkey]\nTriggerKeys=mine\n' > "$b/20000101-000000/config"
-  echo sebtype > "$c/profile"; touch "$fake/fcitx-stays"
-  o=$(fake_run --undo-all < /dev/null) && return 1; rm "$fake/fcitx-stays"; echo "$o"
-  [[ $(cat "$c/profile") == sebtype && -d $b && -f $h/.local/share/fcitx5/addon/notificationitem.conf ]] &&
-    [[ $(kreadconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod) == /usr/share/applications/org.fcitx.Fcitx5.desktop ]] || return 1
+  echo sebtype > "$c/profile"
+  # First an Fcitx5 that keeps its name, then one whose process (a sleep, as its PID) outlives the name.
+  sleep 60 & echo $! > "$fake/fcitx-pid.alive"
+  for stop in fcitx-stays fcitx-pid; do
+    if [[ $stop == fcitx-pid ]]; then mv "$fake/fcitx-pid.alive" "$fake/fcitx-pid"; else touch "$fake/$stop"; fi
+    o=$(fake_run --undo-all < /dev/null) && { echo "$stop: succeeded"; return 1; }; echo "$o"
+    [[ $stop == fcitx-pid ]] && kill "$(< "$fake/fcitx-pid")"; rm "$fake/$stop"
+    [[ $(cat "$c/profile") == sebtype && -d $b && -f $h/.local/share/fcitx5/addon/notificationitem.conf ]] &&
+      [[ $(kreadconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod) == /usr/share/applications/org.fcitx.Fcitx5.desktop ]] || return 1
+  done
+  chmod 000 "$b/20000101-000000/config"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a failed copy succeeded"; return 1; }; chmod 644 "$b/20000101-000000/config"; echo "$o"
+  grep -q "^error: not all of Fcitx5's and Mozc's files went back" <<<"$o" && [[ -d $b ]] && ! grep -q 'changes are undone' <<<"$o" || return 1
   o=$(fake_run --undo-all < /dev/null) || return 1; echo "$o"
   [[ $(cat "$c/profile") == $'[Groups/0]\nName=Mine' && $(cat "$c/config") == $'[Hotkey]\nTriggerKeys=mine' ]] &&
     [[ $(wc -c < "$h/.config/mozc/config1.db") == 11 ]] && grep -qx 'TriggerKey=' "$c/conf/clipboard.conf" &&

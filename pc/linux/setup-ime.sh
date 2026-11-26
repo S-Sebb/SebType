@@ -72,19 +72,29 @@ wait_fcitx_down() {
   for ((i = 0; i < 25; i++)); do ! fcitx_on_dbus && ! fcitx_under_kwin && return 0; sleep 0.2; done
   ! fcitx_on_dbus
 }
+# The PID of the Fcitx5 that owns the session bus name, empty with none.
+fcitx_pid() { busctl --user status org.fcitx.Fcitx5 2>/dev/null | sed -n 's/^PID=//p'; }
+# Waits up to 10 s for process $1 to exit: an Fcitx5 that dropped its bus name may still be saving its groups.
+wait_pid_gone() {
+  local i
+  for ((i = 0; i < 50; i++)); do [[ -e /proc/$1 ]] || return 0; sleep 0.2; done
+  return 1
+}
 # Only the Fcitx5 that owns the session bus name, the one setup configures and restarts: another Fcitx5 of
 # this user (a test's private one, or the desktop's while setup configures a test account) isn't ours (#535).
 fcitx_has_deleted_libs() {
   local pid
-  pid=$(busctl --user status org.fcitx.Fcitx5 2>/dev/null | sed -n 's/^PID=//p')
+  pid=$(fcitx_pid)
   [[ -n $pid ]] && grep -qE '(sebtype\.so|librime\.so).* \(deleted\)$' "/proc/$pid/maps" 2>/dev/null
 }
 # KWin reads its input method when told kwinrc changed (--notify; Plasma 6.8 no longer at reconfigure).
 kwin_set_im() { kwriteconfig6 --notify --file kwinrc --group Wayland --key InputMethod "$1" && kwin_reconfigure; }
 # Stops Fcitx5 under KWin and starts it again. A command given runs while it is stopped, which it must be for
-# that: fails, running nothing, if Fcitx5 doesn't stop.
+# that: fails, running nothing, if Fcitx5 doesn't stop (its process gone, not only its bus name), and fails if
+# the command does.
 kwin_restart_fcitx5() {
-  local s=0
+  local s=0 pid
+  pid=$(fcitx_pid)
   (
     restored=0
     _restore_kwin_im() {
@@ -98,7 +108,8 @@ kwin_restart_fcitx5() {
     trap 'exit 143' TERM
     kwin_set_im "" || true
     if (($#)); then
-      wait_fcitx_down || { echo "error: Fcitx5 didn't stop under KWin" >&2; exit 1; }
+      { wait_fcitx_down && { [[ -z $pid ]] || wait_pid_gone "$pid"; }; } ||
+        { echo "error: Fcitx5 didn't stop under KWin" >&2; exit 1; }
       "$@" || exit 1
     else wait_fcitx_down || true; fi
     _restore_kwin_im
@@ -121,29 +132,34 @@ if ((undo_all)); then
   for u in configurator names chinese-data fcitx5 librime; do "$0" "--undo-$u"; done
   mozc=$config/mozc; [[ -d $HOME/.mozc ]] && mozc=$HOME/.mozc
   backups=$data/sebtype/backup
+  # Run where set -e doesn't hold (kwin_restart_fcitx5's ||): each step returns its failure itself.
   put_back() {
-    local f b LC_COLLATE=C  # <time>/ before the Configurator's <time>_2/
+    local f b LC_ALL=C  # <time>/ before the Configurator's <time>_2/
     for f in "$config/fcitx5/"{profile,config} "$config/fcitx5/conf/"{clipboard,unicode,quickphrase}.conf "$mozc/config1.db"; do
       b=("$backups"/*/"${f##*/}")
       [[ -f ${b[0]} ]] || continue
       echo "change: put back $f from ${b[0]}"
-      mkdir -p "${f%/*}"; cp -p "${b[0]}" "$f"
+      mkdir -p "${f%/*}" || return 1
+      cp -p "${b[0]}" "$f" || return 1
     done
     f=$data/fcitx5/addon/notificationitem.conf
-    if grep -qx 'Library=sebtype' "$f" 2>/dev/null; then echo "change: remove SebType's tray $f"; rm "$f"; fi
+    if grep -qx 'Library=sebtype' "$f" 2>/dev/null; then echo "change: remove SebType's tray $f"; rm "$f" || return 1; fi
   }
+  failed="error: not all of Fcitx5's and Mozc's files went back: the backups stay in $backups"
   b=("$backups"/*/profile); [[ -f ${b[0]} ]] ||
     warn "no backup has Fcitx5's groups from before SebType (setup up to 0.2.0 kept none): once SebType is removed, add Rime back in Fcitx 5 Configuration"
   if kwin_runs_fcitx; then
     echo "change: stop Fcitx5 under KWin while its files go back, then start it again"
-    kwin_restart_fcitx5 put_back
+    kwin_restart_fcitx5 put_back || { echo "$failed" >&2; exit 1; }
   else
     if fcitx_on_dbus; then
       echo "change: quit Fcitx5 while its files go back (it starts again at your next login)"
+      pid=$(fcitx_pid)
       busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Exit
-      wait_fcitx_down || { echo "error: Fcitx5 didn't quit: nothing put back" >&2; exit 1; }
+      { wait_fcitx_down && { [[ -z $pid ]] || wait_pid_gone "$pid"; }; } ||
+        { echo "error: Fcitx5 didn't quit: nothing put back" >&2; exit 1; }
     fi
-    put_back
+    put_back || { echo "$failed" >&2; exit 1; }
   fi
   if [[ -d $backups ]]; then
     echo "change: move $backups to $backups-until-${backup##*/}"
@@ -603,7 +619,7 @@ fcitx_profile=$config/fcitx5/profile
 removing=https://github.com/S-Sebb/SebType/blob/main/pc/linux/README.md#removing-sebtype
 first_rime=; [[ $(rime_groups | cut -f1) == 0* ]] &&
   first_rime=$'\n'"  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back"
-restore=", or run $0 --undo-all before removing SebType, which puts back profile from before it,"  # after first_rime, where a backup is made
+restore=", or run $0 --undo-all before removing SebType to get back your groups from before it"  # after first_rime, where a backup is made
 if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
   first_group=$(running_groups 1)  # a failed read stops setup, as a failed call does
   IFS=$'\x1f' read -r -a q <<<"$first_group"
@@ -612,7 +628,7 @@ if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'
     [[ " sebtype keyboard-us rime mozc " == *" $im "* ]] || ims+=("$im")
   done
   if [[ "${now[*]}" != "${ims[*]}" ]]; then
-    if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc (backup of $fcitx_profile in $backup)$first_rime${first_rime:+$restore as $removing says}"; then
+    if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc (backup of $fcitx_profile in $backup)$first_rime${first_rime:+$restore (see $removing)}"; then
       call Save  # the running groups, on disk for the backup
       [[ -f $fcitx_profile ]] && save "$fcitx_profile"
       args=()
@@ -628,7 +644,7 @@ else
   src=$fcitx_profile; [[ -f $src ]] || src=/dev/null
   want=$(fcitx_profile_update "$src")
   backed=; [[ -f $fcitx_profile ]] && backed=" (backup in $backup)" && first_rime+=${first_rime:+$restore}
-  first_rime+=${first_rime:+ as $removing says}
+  first_rime+=${first_rime:+ (see $removing)}
   if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
     change "set SebType as the input method in $fcitx_profile$backed$first_rime"; then
     [[ -f $fcitx_profile ]] && save "$fcitx_profile"

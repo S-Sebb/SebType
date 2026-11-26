@@ -65,11 +65,16 @@ with Fcitx5 stopped, it puts back `~/.config/fcitx5/profile` (the groups), `conf
 and Mozc's `config1.db`, each from the oldest copy in `~/.local/share/sebtype/backup/` (#582), and Fcitx5's own
 tray. Changes made to them since setup, such as a group added, are lost; a file with no copy stays. Setups up to
 0.2.0 kept no copy of `profile`: then add Rime back in Fcitx 5 Configuration after the removal. The backups move
-to `backup-until-<time>`, so a later install's are its own.
+to `backup-until-<time>`, so a later install's are its own. If you removed and installed SebType again before
+0.3.0, the oldest copies may be from before the earlier install, not from just before this one.
+
+Already ran `dnf remove`? Install SebType again, then run the two commands: installing it again only adds newer
+copies, so the oldest are still the ones from before SebType.
 
 These stay: KWin's virtual keyboard (Fcitx 5), XMODIFIERS, the WeChat launcher fix, Alt+\` taken from Plasma's
 "Walk Through Windows of Current Application" (System Settings → Shortcuts → KWin), and Rime's Ctrl+Shift+F and 6
-candidates per page in `~/.local/share/fcitx5/rime/default.custom.yaml`.
+candidates per page in `~/.local/share/fcitx5/rime/default.custom.yaml` and `sebtype_typo/keyboard: pc` in
+`rime_ice.custom.yaml`, which only SebType reads.
 
 ## What it does, and why
 

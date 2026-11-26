@@ -42,10 +42,8 @@ groups() { call --json=short InputMethodGroups | python3 -c "import json, sys; p
 want=$'"'"'Default: keyboard-us rime\nDeutsch: keyboard-de'"'"'
 f=~/.config/fcitx5'
 
-# The image's /etc/xdg/kwinrc picks Fcitx5 for every account, which no Fedora KDE does; and setup's sudo asks
-# no password here.
-if ! kde-emu "$session" root bash -c "sed -i '/^InputMethod=/d' /etc/xdg/kwinrc &&
-  echo '$USER ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/test-removal" > "$out/session.log" 2>&1; then
+# Setup's sudo asks no password here.
+if ! kde-emu "$session" root bash -c "echo '$USER ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/test-removal" > "$out/session.log" 2>&1; then
   echo "preflight: the session's setup failed (see $out/session.log)"; exit 1
 fi
 
@@ -61,7 +59,7 @@ check install-and-setup "sudo dnf install -y $rpm
 up; groups; [[ $(groups | head -1) == "Default: sebtype" ]] && ls ~/.local/share/fcitx5/addon/notificationitem.conf && ! rpm -q kcm-fcitx5'
 check group-added-after-setup 'call AddInputMethodGroup s Later; call SetInputMethodGroupInfo "ssa(ss)" Later us 1 keyboard-us ""; call Save
 groups | grep -qx "Later: keyboard-us"'
-check undo-all 'sebtype-setup --undo-all < /dev/null | tee /tmp/undo-all.out; o=$(< /tmp/undo-all.out); up
+check undo-all 'o=$(sebtype-setup --undo-all < /dev/null) || { echo "$o"; exit 1; }; echo "$o"; up
 grep -q "^change: stop Fcitx5 under KWin" <<<"$o" && [[ $(groups) == "$want" ]] && rpm -q kcm-fcitx5 fcitx5-configtool &&
   [[ ! -e ~/.local/share/fcitx5/addon/notificationitem.conf && ! -e ~/.local/share/sebtype/configurator ]] &&
   grep -qx "0=Control+space" "$f/config"'
