@@ -28,7 +28,7 @@ case ${1-} in
   '') ;;
   *) echo "usage: $0 [--dry-run | --undo-all | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
-here=$(dirname "$(readlink -f "$0")")
+self=$(readlink -f "$0") here=$(dirname "$self")
 checkout=0; [[ -f $here/../../linux/build.sh ]] && checkout=1
 
 config=${XDG_CONFIG_HOME:-$HOME/.config}
@@ -70,10 +70,10 @@ wait_fcitx_up() {
 wait_fcitx_down() {
   local i
   for ((i = 0; i < 25; i++)); do ! fcitx_on_dbus && ! fcitx_under_kwin && return 0; sleep 0.2; done
-  ! fcitx_on_dbus
+  return 1
 }
 # The PID of the Fcitx5 that owns the session bus name, empty with none.
-fcitx_pid() { busctl --user status org.fcitx.Fcitx5 2>/dev/null | sed -n 's/^PID=//p'; }
+fcitx_pid() { busctl --user status org.fcitx.Fcitx5 2>/dev/null | sed -n 's/^PID=//p' || true; }
 # Waits up to 10 s for process $1 to exit: an Fcitx5 that dropped its bus name may still be saving its groups.
 wait_pid_gone() {
   local i
@@ -91,7 +91,7 @@ fcitx_has_deleted_libs() {
 kwin_set_im() { kwriteconfig6 --notify --file kwinrc --group Wayland --key InputMethod "$1" && kwin_reconfigure; }
 # Stops Fcitx5 under KWin and starts it again. A command given runs while it is stopped, which it must be for
 # that: fails, running nothing, if Fcitx5 doesn't stop (its process gone, not only its bus name), and fails if
-# the command does.
+# the command does. With none it always succeeds.
 kwin_restart_fcitx5() {
   local s=0 pid
   pid=$(fcitx_pid)
@@ -100,7 +100,8 @@ kwin_restart_fcitx5() {
     _restore_kwin_im() {
       ((restored)) && return 0
       restored=1
-      kwin_set_im "$fcitx_desktop"
+      kwin_set_im "$fcitx_desktop" ||
+        echo "warning: couldn't set KWin's virtual keyboard back to Fcitx 5: pick it in System Settings → Keyboard → Virtual Keyboard" >&2
     }
     trap '_restore_kwin_im || true' EXIT
     trap 'exit 129' HUP
@@ -113,7 +114,7 @@ kwin_restart_fcitx5() {
       "$@" || exit 1
     else wait_fcitx_down || true; fi
     _restore_kwin_im
-  ) || s=$?
+  ) || s=$?  # the command's failure: _restore_kwin_im warns of its own
   wait_fcitx_up || true
   return "$s"
 }
@@ -129,24 +130,35 @@ kwin_runs_fcitx() {
 # with setup or already as setup wanted it. The backups move aside, so a later install's oldest are its own.
 # fcitx5-rime's Rime stays in the groups while SebType is installed, so Fcitx5 starts again at once.
 if ((undo_all)); then
-  for u in configurator names chinese-data fcitx5 librime; do "$0" "--undo-$u"; done
+  # Their advice to restart Fcitx5 stays quiet: this restarts it.
+  for u in configurator names chinese-data fcitx5 librime; do SEBTYPE_UNDO_ALL=1 "$self" "--undo-$u"; done
   mozc=$config/mozc; [[ -d $HOME/.mozc ]] && mozc=$HOME/.mozc
   backups=$data/sebtype/backup
   # Run where set -e doesn't hold (kwin_restart_fcitx5's ||): each step returns its failure itself.
+  # oldest <file>: the oldest backup of it, none for a profile with SebType in it (setup up to 0.2.0 kept no
+  # profile, so the Configurator's Use SebType or a rerun of setup could save one SebType had changed).
+  oldest() {
+    local b LC_ALL=C  # <time>/ before the Configurator's <time>_2/
+    for b in "$backups"/*/"$1"; do
+      [[ -f $b ]] || continue
+      [[ $1 == profile ]] && grep -qx 'Name=sebtype' "$b" && continue
+      echo "$b"; return
+    done
+  }
   put_back() {
-    local f b LC_ALL=C  # <time>/ before the Configurator's <time>_2/
+    local f b
     for f in "$config/fcitx5/"{profile,config} "$config/fcitx5/conf/"{clipboard,unicode,quickphrase}.conf "$mozc/config1.db"; do
-      b=("$backups"/*/"${f##*/}")
-      [[ -f ${b[0]} ]] || continue
-      echo "change: put back $f from ${b[0]}"
+      b=$(oldest "${f##*/}")
+      [[ -n $b ]] || continue
+      echo "change: put back $f from $b"
       mkdir -p "${f%/*}" || return 1
-      cp -p "${b[0]}" "$f" || return 1
+      cp -p "$b" "$f" || return 1
     done
     f=$data/fcitx5/addon/notificationitem.conf
     if grep -qx 'Library=sebtype' "$f" 2>/dev/null; then echo "change: remove SebType's tray $f"; rm "$f" || return 1; fi
   }
   failed="error: not all of Fcitx5's and Mozc's files went back: the backups stay in $backups"
-  b=("$backups"/*/profile); [[ -f ${b[0]} ]] ||
+  [[ -n $(oldest profile) ]] ||
     warn "no backup has Fcitx5's groups from before SebType (setup up to 0.2.0 kept none): once SebType is removed, add Rime back in Fcitx 5 Configuration"
   if kwin_runs_fcitx; then
     echo "change: stop Fcitx5 under KWin while its files go back, then start it again"
@@ -254,7 +266,7 @@ if ((undo_names)); then
     echo "change: drop the 中文 schema name from $rime_custom"
     sed -i '/^  schema\/name: ".中文"/d' "$rime_custom"; changes=1
   fi
-  ((changes)) && busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && echo "$names_note"
+  ((changes)) && [[ -z ${SEBTYPE_UNDO_ALL-} ]] && busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && echo "$names_note"
   exit 0
 fi
 
@@ -274,7 +286,7 @@ if ((undo_chinese_data)); then
     tac "$rime_before/files.txt" | while IFS= read -r f; do
       if [[ $f == */ ]]; then rmdir --ignore-fail-on-non-empty "$rime_dir/$f"; continue; fi
       rm -f "$rime_dir/$f"
-      [[ -e $rime_before/old/$f ]] && cp -p "$rime_before/old/$f" "$rime_dir/$f"
+      if [[ -e $rime_before/old/$f ]]; then cp -p "$rime_before/old/$f" "$rime_dir/$f"; fi  # none: SebType's own
     done
     rm -f "$rime_marker"; rm -r "$rime_before"
     deploy_rime
@@ -303,7 +315,7 @@ if ((undo_librime)); then
   if ((${#librime_pkgs[@]})); then
     echo "change: replace SebType's old ${librime_pkgs[*]} with Fedora's"
     sudo dnf distro-sync -y "${librime_pkgs[@]}"
-    restart_note "librime (fcitx5-rime's; SebType's input method has its own)"
+    [[ -n ${SEBTYPE_UNDO_ALL-} ]] || restart_note "librime (fcitx5-rime's; SebType's input method has its own)"
   fi
   exit 0
 fi
