@@ -12,9 +12,10 @@ line.
 
 A correction example sits in the text in front of a word: <T>, the letters typed for it, <S>, then the word as
 it is written, as the phone scores a candidate: its own pieces, with a space in front. HINT (5 %) of the words
-get one, wherever they stand (after a quote or a bracket too), and HOMOGRAPH_HINT (50 %) of the words that are
-a contraction's letters too (cant, wont, ill, id, were: homographs()), so the model learns from the text
-around them which is meant; at 5 % it had seen the noun cant about 30 times and read "such cant" as can't. The typed letters are lowercase:
+get one, wherever they stand (after a quote or a bracket too), and HOMOGRAPH_HINT (50 %) of the words typed
+as both a contraction's letters and a word (can't and cant, I'd and id: homographs()), so the model learns
+from the text around them which is meant; at 5 % it had seen the noun cant about 30 times and read "such
+cant" as can't. The typed letters are lowercase:
 - 40 %: the word itself, so a correctly typed word is kept;
 - 35 %: a phone typo from the bank (noise.py), 15 %: a spelling mistake from it (a phone typo for a word too
   short for one), made on the spot for a word the bank lacks;
@@ -307,7 +308,11 @@ def examples(rng, seg):
     while k < len(words):
         m = words[k]
         if rng.random() < (
-            max(HINT, HOMOGRAPH_HINT) if m.group().lower() in homograph else HINT
+            # By the letters typed, so I'd as often as id: by the word written, the first r5 gave id ten times
+            # its share of the hints "id" and "If I were you id" stayed id (#561).
+            max(HINT, HOMOGRAPH_HINT)
+            if m.group().lower().replace("'", "") in homograph
+            else HINT
         ):
             n = words[k + 1] if k + 1 < len(words) else None
             if (

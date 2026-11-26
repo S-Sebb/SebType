@@ -132,9 +132,14 @@ check(
     and not {"states", "girls"} & pack.homograph,
 )
 pack.HINT = 0
-got = written("I despise such cant and pious cant", seed=2)
+got = [written(f"so {w} and", seed=k) for w in ("id", "I'd") for k in range(200)]
 pack.HINT = 1.0
-check("examples: a homograph gets one more often", 1 <= len(got) <= 2, got)
+bare, full = sum(map(len, got[:200])), sum(map(len, got[200:]))
+check(
+    "examples: a homograph's letters get one more often, its contraction too",
+    70 < bare < 130 and 70 < full < 130,
+    (bare, full),
+)
 short = (
     sum(pack.typed_for(rng, "work", prefix=True) == "wor" for _ in range(20000)) / 20000
 )
