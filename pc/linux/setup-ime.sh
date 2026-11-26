@@ -169,7 +169,7 @@ if ((undo_all)); then
   # profile without SebType stays as it is.
   undo_profile() {
     python3 - "$config/fcitx5/profile" "$backups" "$groups_record" <<'PY'
-import glob, os, re, sys, tempfile
+import os, re, sys, tempfile
 
 def sections(text):
     out, cur = [], None
@@ -239,7 +239,16 @@ for line in lines:
 # Each group's keyboard-us, Rime and Mozc in the newest backup (C order: <time>/ before <time>_2/) with the
 # group and no SebType in it: all a group set up by SebType 0.2.0 or older has, which no record names.
 before = {}
-for b in sorted(glob.glob(os.path.join(glob.escape(backups), '*', 'profile'))):
+try:
+    folders = sorted(os.listdir(backups))
+except FileNotFoundError:
+    folders = []
+for folder in folders:
+    b = os.path.join(backups, folder, 'profile')
+    try:
+        os.lstat(b)  # a folder it can't look in fails, as a copy it can't read does
+    except (FileNotFoundError, NotADirectoryError):
+        continue
     for lines, items in groups(sections(read(b))):
         if all(kv(i).get('Name') != 'sebtype' for i in items):
             before[name(lines)] = (kv(lines).get('DefaultIM'), [(kv(i)['Name'], kv(i).get('Layout', '')) for i in items
@@ -285,13 +294,13 @@ for g, (lines, items) in enumerate(kept):
     out += [f'[Groups/{g}]', *lines, '']
     for i, item in enumerate(items):
         out += [f'[Groups/{g}/Items/{i}]', *item, '']
-for name, lines in secs:
-    if name == 'GroupOrder':
+for sec, lines in secs:
+    if sec == 'GroupOrder':
         order = [v for k, v in sorted(kv(lines).items(), key=lambda p: int(p[0])) if ini(v) not in dropped]
         lines = [f'{k}={v}' for k, v in enumerate(order)]
-    elif re.fullmatch(r'Groups/\d+(/Items/\d+)?', name):
+    elif re.fullmatch(r'Groups/\d+(/Items/\d+)?', sec):
         continue
-    out += [f'[{name}]', *lines, '']
+    out += [f'[{sec}]', *lines, '']
 print(f"change: take SebType's input method out of the groups in {path}")
 fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.profile.')
 try:
@@ -853,14 +862,20 @@ if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'
       call Save  # the running groups, on disk for the backup
       [[ -f $fcitx_profile ]] && save "$fcitx_profile"
       mapfile -t old < <(profile_group "$group")
+      # Each input method with its layout, which the ones kept keep.
+      mapfile -t pairs < <(call --json=short InputMethodGroupInfo s "$group" |
+        python3 -c 'import json, sys; print(*(f"{im}:{l}" for im, l in json.load(sys.stdin)["data"][1]), sep="\n")')
       args=()
-      for im in "${ims[@]}"; do args+=("$im" ""); done
+      for im in "${ims[@]}"; do
+        l=; for pair in "${pairs[@]}"; do [[ ${pair%%:*} == "$im" ]] && { l=${pair#*:}; break; }; done
+        args+=("$im" "$l")
+      done
       call SetInputMethodGroupInfo 'ssa(ss)' "$group" "$layout" $((${#args[@]} / 2)) "${args[@]}"
       call SetCurrentIM s sebtype >/dev/null 2>&1 || true
       call Save
       # What went, for --undo-all, now that it has: a failed call stopped setup above.
       taken=()
-      for im in "${old[@]:1}"; do [[ " ${ims[*]} " == *" ${im%%:*} "* ]] || taken+=("$im"); done
+      for im in "${pairs[@]}"; do [[ " ${ims[*]} " == *" ${im%%:*} "* ]] || taken+=("$im"); done
       new=$(profile_group "$group" | head -1)
       record_group "$group" 0 "${old[0]-}" "$new" "${taken[*]}"
     fi

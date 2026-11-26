@@ -1073,7 +1073,7 @@ pub fn use_sebtype_for_rime() -> io::Result<()> {
         // Recorded only once the group reads back as set: a record of a change never made would bring back,
         // at the undo, an input method the user has since taken out.
         let out = controller("InputMethodGroupInfo", &["s", &group])?;
-        if parse_group(&out).map(|(_, now)| now) != Some(ims.clone()) {
+        if parse_group(&out).map(|(_, now)| now).as_ref() != Some(&ims) {
             return Err(io::Error::other(format!(
                 "{group} didn't take SebType's input method: {out}"
             )));
@@ -1526,8 +1526,6 @@ mod tests {
         );
     }
 
-    /// #542: Use SebType's retry in the same second gets a backup folder of its own, after the first in the
-    /// order README's `LC_ALL=C ls` gives.
     /// Use SebType's line for --undo-all (#611): a group named with a space, which Fcitx5 quotes, found;
     /// the default before and after, each taken input method with its layout; a tab in a name escaped.
     #[test]
@@ -1547,6 +1545,8 @@ mod tests {
         assert_eq!(record_line("", "", "a\tb\\", &[], &after), "a\\tb\\\\\t0\t\t\t\n");
     }
 
+    /// #542: Use SebType's retry in the same second gets a backup folder of its own, after the first in the
+    /// order README's `LC_ALL=C ls` gives.
     #[test]
     fn a_backup_in_the_same_second_gets_its_own_folder() {
         let dir = std::env::temp_dir().join(format!("sebtype-backup-test-{}", std::process::id()));

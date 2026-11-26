@@ -163,6 +163,8 @@ fresh_dry() {
 check fresh-dry-run-changes-nothing fresh_dry
 
 fresh_apply() {
+  # Pinyin, which stays, keeps its layout.
+  echo '{"type":"sa(ss)","data":["us",[["keyboard-us",""],["pinyin","de"]]]}' > "$fake/group"
   local o; o=$(echo n | fake_run) || return 1; echo "$o"
   [[ $(kreadconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod) == \
     /usr/share/applications/org.fcitx.Fcitx5.desktop ]] &&
@@ -170,7 +172,7 @@ fresh_apply() {
     grep -q '^Exec=env QT_IM_MODULE=fcitx /usr/bin/wechat' "$h/.local/share/applications/wechat.desktop" &&
     [[ ! -e $h/.local/share/flatpak/overrides/com.qq.QQ ]] &&
     ls "$h"/.local/share/sebtype/backup/*/com.qq.QQ "$h"/.local/share/sebtype/backup/*/wechat.desktop &&
-    grep -q 'Default us 1 sebtype $' "$fake/set.log" && grep -q 'SetCurrentIM s sebtype$' "$fake/current-im.log" &&
+    grep -q 'Default us 2 sebtype  pinyin de$' "$fake/set.log" && grep -q 'SetCurrentIM s sebtype$' "$fake/current-im.log" &&
     grep -qx 'systemctl --user set-environment XMODIFIERS=@im=fcitx' "$fake/systemctl.log" && [[ ! -e $fake/sudo.log ]] &&
     cmp ../../linux/data/notificationitem.conf "$h/.local/share/fcitx5/addon/notificationitem.conf" &&
     fcitx_hotkeys && mozc_keymap && tray_icons && [[ ! -e $h/.local/share/fcitx5/inputmethod/rime.conf ]] &&
@@ -1890,8 +1892,8 @@ undo_all() {
   o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a copy into the folder config succeeded"; return 1; }; echo "$o"
   [[ -z $(ls -A "$c/config") ]] && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
   rmdir "$c/config"; mv "$fake/config" "$c/config"; cp "$fake/profile-before" "$c/profile"
-  # A profile it can't read, a folder it can't look in, a backup it can't read, and a folder it can't write
-  # in fail the undo and leave profile as it was.
+  # A profile it can't read, a folder it can't look in, a backup or backup folder it can't read, and a folder
+  # it can't write in fail the undo and leave profile as it was.
   chmod 000 "$c/profile"
   o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "an unreadable profile succeeded"; return 1; }; chmod 644 "$c/profile"; echo "$o"
   cmp "$c/profile" "$fake/profile-before" && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
@@ -1900,6 +1902,10 @@ undo_all() {
   cmp "$c/profile" "$fake/profile-before" && [[ -d $b ]] && ! grep -q 'changes are undone' <<<"$o" || return 1
   chmod 000 "$b/20000101-000000_2/profile"
   o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "an unreadable backup succeeded"; return 1; }; chmod 644 "$b/20000101-000000_2/profile"; echo "$o"
+  cmp "$c/profile" "$fake/profile-before" && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
+  chmod 000 "$b/20000101-000000_2"
+  o=$(fake_run --undo-all < /dev/null 2>&1) && { chmod 755 "$b/20000101-000000_2"; echo "an unreadable backup folder succeeded"; return 1; }
+  chmod 755 "$b/20000101-000000_2"; echo "$o"
   cmp "$c/profile" "$fake/profile-before" && grep -q "^error: not all of" <<<"$o" && [[ -d $b ]] || return 1
   chmod 555 "$c"
   o=$(fake_run --undo-all < /dev/null 2>&1) && { echo "a failed write succeeded"; return 1; }; chmod 755 "$c"; echo "$o"
