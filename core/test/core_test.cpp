@@ -1040,17 +1040,27 @@ TEST_F(EnglishTest, TodaysLearnedWordsAreTakenInOnce) {
   EXPECT_TRUE(lists("zorbleq"));
 }
 
+// Each list is the model's ranking, waited for: until it comes the list kept from before the key is shown
+// (#450), which after "fuck" was typed out still holds it, as typed (#577).
 TEST_F(EnglishTest, OffensiveWordsAreNeverSuggestedOrLearned) {
-  type("fuc");
+  const auto typeRanked = [&](const std::string &s) {
+    const int readies = readyCount();
+    type(s);
+    ASSERT_TRUE(ready(readies));
+  };
+  type("a");  // the model loads
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  typeRanked("fuc");
   EXPECT_FALSE(lists("fuck")) << testing::PrintToString(list());
   en->selectAt(indexOf("fuc"));
   en->takeCommit();
-  type("fuck");
+  typeRanked("fuck");
   en->selectAt(indexOf("fuck"));  // typed out and picked: still not learned
   en->takeCommit();
   en->setContext("");
-  type("fuc");
-  EXPECT_FALSE(lists("fuck"));
+  typeRanked("fuc");
+  EXPECT_FALSE(lists("fuck")) << testing::PrintToString(list());
 }
 
 TEST_F(EnglishTest, EmailDomainsFollowTheAt) {
