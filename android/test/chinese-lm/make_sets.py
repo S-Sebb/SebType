@@ -14,7 +14,7 @@ Seed 259; the same sources give the same sets. The pinyin is read for the item's
 
 | Set | Items | What is typed |
 |---|---|---|
-| sent-chat, sent-news | 800 each | a clause of 2-12 Han characters in full pinyin |
+| sent-chat, sent-news | 800 each (sent-chat 803: REPORTED) | a clause of 2-12 Han characters in full pinyin |
 | long-chat, long-news | 200 each | a clause of 13-25 Han characters in full pinyin, about as many of each length (#563) |
 | long-typo-chat, long-typo-news | 199-200 | long-chat's and long-news's clauses with typos as typo's (an item a typo leaves as it was is left out) |
 | fuzzy-chat, fuzzy-news | 300 each at most | sent's and long's clauses with 2 or more of zh, ch, sh, each typed as z, c, s, as fuzzy pinyin's users type them |
@@ -36,6 +36,14 @@ import jieba
 
 jieba.setLogLevel(60)
 CONTEXT = 64  # characters of the field's text kept before an item
+# Clauses the owner reported (context, text), kept in the test's sent-chat after its drawn ones; score.py's bar
+# wants each first (#612).
+REPORTED = [
+    l.split("\t")
+    for l in (Path(__file__).parent / "sets/reported.tsv")
+    .read_text(encoding="utf-8")
+    .splitlines()
+]
 QUOTA = {
     "meetings": 0.4,
     "hundredcv": 0.2,
@@ -183,7 +191,11 @@ def main():
         # The note: the clause's words (jieba), for the word accuracy.
         write(
             out / f"{prefix}sent-{src}.tsv",
-            [(c, "".join(sy), t, " ".join(jieba.cut(t))) for c, t, sy in sent],
+            [(c, "".join(sy), t, " ".join(jieba.cut(t))) for c, t, sy in sent]
+            + [
+                (c, "".join(common.reading(t)), t, " ".join(jieba.cut(t)))
+                for c, t in (REPORTED if src == "chat" and not dev else [])
+            ],
         )
         words = pooled(rng, pools[src], word_items)
         abbr = unique(words, int(400 * scale), lambda x: x[1])
