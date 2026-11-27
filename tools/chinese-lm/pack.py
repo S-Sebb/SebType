@@ -52,6 +52,11 @@ SHARE = {
     "tatoeba": 0.015,
     "kdconv": 0.01,
     "oasst2": 0.005,
+    # Running text with idioms (#557's r10): Wikisource's vernacular, Wikiquote, Wikibooks, Wikivoyage.
+    "wikisource": 0.04,
+    "wikiquote": 0.005,
+    "wikibooks": 0.005,
+    "wikivoyage": 0.0025,
 }
 # A chat source is read at most this often per pack, its share falling short: r8 reads its 6 packs about 1.5
 # times, so up to 36 times in all (r3-r7: 3 packs, 1.6 times). #557's r3, uncapped, read the meetings 47 times

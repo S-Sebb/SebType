@@ -72,6 +72,16 @@ def segments(doc):
     return split, out
 
 
+def wikimedia_page(arg):
+    name, page = arg
+    key, texts = common.wiki_page(page)
+    return (
+        segments((common.split(name, key), texts, 10))
+        if key is not None
+        else ("train", [])
+    )
+
+
 def wiki_part(part):
     path, group = part
     t = pq.ParquetFile(path).read_row_group(group, columns=["id", "text"])
@@ -140,6 +150,15 @@ def main(run):
             for g in range(pq.ParquetFile(f).num_row_groups)
         ]
         w.write("wikipedia", (d for part in pool.imap(wiki_part, parts) for d in part))
+        # Last, so the files above stay as they were without them.
+        for name in common.WIKIS:
+            pages = common.wiki_pages(
+                src / f"wikimisc/zh{name}-20261101-pages-articles.xml.bz2"
+            )
+            w.write(
+                name,
+                pool.imap(wikimedia_page, ((name, p) for p in pages), chunksize=64),
+            )
 
 
 if __name__ == "__main__":

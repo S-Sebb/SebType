@@ -14,6 +14,7 @@ import bz2
 import glob
 import gzip
 import hashlib
+import html
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -48,6 +49,7 @@ def clean(s):
 # Per 10,000 documents: (test, dev).
 HELD = {
     "wikipedia": (0, 20),
+    **{w: (0, 20) for w in ["wikisource", "wikiquote", "wikibooks", "wikivoyage"]},
     "oasst2": (300, 300),
     "hundredcv": (150, 150),
     "kdconv": (200, 200),
@@ -103,6 +105,50 @@ def paragraphs(mw, text):
         if plain:
             out.append(plain)
     return out
+
+
+# Wikisource, Wikiquote, Wikibooks and Wikivoyage (#557): idioms and everyday phrases in running text. Wikisource
+# is mostly classical Chinese, which nobody types: a paragraph is kept only where the vernacular's particles are
+# 4 % of its characters and more than twice the classical ones.
+WIKIS = ["wikisource", "wikiquote", "wikibooks", "wikivoyage"]
+VERNACULAR, CLASSICAL = set("的了着么们这那吗呢吧啊"), set("之乎者也矣焉曰兮哉其乃於")
+PAGE_NS = re.compile(r"<ns>(\d+)</ns>")
+PAGE_ID = re.compile(r"<id>(\d+)</id>")
+PAGE_TEXT = re.compile(r"<text[^>]*>(.*?)</text>", re.DOTALL)
+
+
+def vernacular(s):
+    n = len(HAN.findall(s))
+    v = sum(c in VERNACULAR for c in s)
+    return n > 0 and v >= 0.04 * n and v > 2 * sum(c in CLASSICAL for c in s)
+
+
+def wiki_pages(path):
+    """A Wikimedia dump's pages, as their XML, read in 4 MB pieces (each parsed in a worker: wiki_page)."""
+    rest = ""
+    with bz2.open(path, "rt", encoding="utf-8") as f:
+        while chunk := f.read(1 << 22):
+            pages = (rest + chunk).split("</page>")
+            rest = pages.pop()
+            yield from pages
+
+
+def wiki_page(page):
+    """A page's (id, paragraphs): an article's (namespace 0, no redirect) vernacular paragraphs, made plain."""
+    import mwparserfromhell
+
+    ns, text = PAGE_NS.search(page), PAGE_TEXT.search(page)
+    if not ns or ns.group(1) != "0" or "<redirect" in page or not text:
+        return None, []
+    text = html.unescape(text.group(1))
+    if not vernacular(text):  # most of Wikisource: classical throughout
+        return None, []
+    out = []
+    for p in mwparserfromhell.parse(text).strip_code().split("\n"):
+        p = p.strip()
+        if p and vernacular(p):
+            out.append(p)
+    return int(PAGE_ID.search(page).group(1)), out
 
 
 def news_split(src):
