@@ -153,8 +153,9 @@ std::string utf8(const std::vector<int> &cps) {
 
 // The dictionaries and the model have ASCII's apostrophe: a curly one (iOS's, some PC layouts', pasted text's)
 // is read as it, and a word typed with one gets it back where it shows (#583).
+char32_t asciiApostrophe(char32_t c) { return c == U'’' ? '\'' : c; }
 std::vector<int> asciiApostrophes(std::vector<int> cps) {
-  std::replace(cps.begin(), cps.end(), int(U'’'), int('\''));
+  for (int &c : cps) c = int(asciiApostrophe(c));
   return cps;
 }
 std::string asciiApostrophes(const std::string &s) { return utf8(asciiApostrophes(codePoints(s))); }
@@ -172,7 +173,6 @@ char32_t lowerCase(char32_t c) { return (c >= 'A' && c <= 'Z') || (c >= 0xc0 && 
 char32_t upperCase(char32_t c) { return (c >= 'a' && c <= 'z') || (c >= 0xe0 && c <= 0xfe && c != 0xf7) ? c - 32 : c; }
 char32_t keyChar(uint32_t sym) {
   if (sym >= 0x1000000) return sym - 0x1000000;  // X11's Unicode keysyms
-  if (sym == 0xad1) return U'’';                 // rightsinglequotemark, as XKB's layouts give it (#583)
   return sym >= 0x20 && sym < 0x100 && sym != 0x7f ? sym : 0;
 }
 // Separators that end a word and let a space correct it, as AOSP's English ones.
@@ -182,12 +182,13 @@ bool joinsWord(char32_t c) { return std::u32string_view(U".,;:!?").find(c) != st
 
 // The phantom space a revert took, as today's app puts it back (InputLogic's handleNonSeparatorEvent and
 // handleSeparatorEvent, with its English spacing-and-punctuations/default.xml): before any character but its
-// word separators, the word connector (') and Unicode's other symbols (those on our keys: © ® ° ™), and
+// word separators, the word connector (' or ’) and Unicode's other symbols (those on our keys: © ® ° ™), and
 // before a double quote that opens one. It stays for the next character after .,;:!?)]}.
 bool spaceBeforeAfterRevert(char32_t c) {
-  return c != '\'' && std::u32string_view(U"\t\n \u00a0()[]{}*&<>+=|.,;:!?/_\"-#$`\\%\u00bf\u00a1\u2014\u2013\u201e\u201c"
-                                          U"\u201d\u00ab\u00bb\u2039\u203a\u2026\u061f\u060c\u061b~\u00a9\u00ae\u00b0\u2122")
-                          .find(c) == std::u32string_view::npos;
+  return asciiApostrophe(c) != '\'' &&
+         std::u32string_view(U"\t\n \u00a0()[]{}*&<>+=|.,;:!?/_\"-#$`\\%\u00bf\u00a1\u2014\u2013\u201e\u201c"
+                             U"\u201d\u00ab\u00bb\u2039\u203a\u2026\u061f\u060c\u061b~\u00a9\u00ae\u00b0\u2122")
+             .find(c) == std::u32string_view::npos;
 }
 bool keepsPhantomSpace(char32_t c) { return std::u32string_view(U".,;:!?)]}").find(c) != std::u32string_view::npos; }
 
@@ -269,7 +270,7 @@ void addResult(std::vector<Word> &results, const Word &w, size_t capacity) {
 // punctuation ends the context.
 latinime::NgramContext ngramContext(const std::string &context) {
   const auto nl = context.rfind('\n');
-  const std::string line = asciiApostrophes(nl == std::string::npos ? context : context.substr(nl + 1));
+  const std::string line = nl == std::string::npos ? context : context.substr(nl + 1);
   std::vector<std::string> words;
   for (size_t i = 0; i < line.size();) {
     const size_t start = line.find_first_not_of(" \t", i);
@@ -488,14 +489,14 @@ class English : public Engine {
       return true;
     }
     if (isLetter(c) || ((c == '\'' || c == U'’') && !typed_.empty())) {
-      if (phantom && c != '\'') {  // today's app's only word connector is ASCII's apostrophe
+      if (phantom && asciiApostrophe(c) != '\'') {  // today's app's only word connector is the apostrophe
         if (!typed_.empty()) commitWord(utf8(typed_), false);
         commit_ += " ";
         context_ += " ";
       }
       if (typed_.empty()) loadModel();
       typed_.push_back(int(c));
-      const auto [x, y] = k.x >= 0 ? std::pair{k.x, k.y} : keyCentre(lowerCase(c == U'’' ? '\'' : c));
+      const auto [x, y] = k.x >= 0 ? std::pair{k.x, k.y} : keyCentre(lowerCase(asciiApostrophe(c)));
       xs_.push_back(x), ys_.push_back(y);
       typedChanged();
       return true;
@@ -707,14 +708,17 @@ class English : public Engine {
     };
     std::map<std::vector<int>, Entry> entries;
     auto valid = [](const std::vector<int> &cps) { return !cps.empty() && cps.size() < size_t(kMaxWordLength); };
+    // Their spellings are looked up as typed letters are, with ASCII's apostrophe, and shown as saved (#583).
+    personalSpelling_.clear();
     for (const PersonalWord &w : personalWords_) {
-      const auto cps = codePoints(w.word);
+      const auto cps = asciiApostrophes(codePoints(w.word));
+      personalSpelling_.emplace(utf8(cps), w.word);
       if (!valid(cps)) continue;
       const int probability = std::clamp(w.frequency * kPersonalProbability / kHandAddedFrequency, 1, 255);
       Entry &word = entries[cps];
       word.word = true;
       word.probability = std::max(word.probability, probability);
-      const auto shortcut = codePoints(w.shortcut);
+      const auto shortcut = asciiApostrophes(codePoints(w.shortcut));
       if (!valid(shortcut)) continue;
       Entry &entry = entries[shortcut];
       entry.probability = std::max(entry.probability, probability);
@@ -948,7 +952,7 @@ class English : public Engine {
       if (std::find(shortcuts_.begin(), shortcuts_.end(), word) == shortcuts_.end()) shortcuts_.push_back(word);
     };
     for (const PersonalWord &w : personalWords_)
-      if (lower(codePoints(w.shortcut)) == typedLower) add(w.word);
+      if (lower(asciiApostrophes(codePoints(w.shortcut))) == typedLower) add(asciiApostrophes(w.word));
     if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
       add(results.front().word);
     // The model ranks a word typed with capitals (Were where a sentence starts, ILL) from the decoder's words
@@ -1009,18 +1013,25 @@ class English : public Engine {
     wake_.notify_all();
   }
 
-  // Shows STRIP (best first) and COMMITTED, what a space commits, for the letters typed.
+  // Shows STRIP (best first) and COMMITTED, what a space commits, for the letters typed. Both have ASCII's
+  // apostrophe, as the letters are looked up: the typed word shows as typed, a personal word as saved, and
+  // other words with the curly apostrophe if the letters have one (#583).
   void show(std::vector<std::string> strip, std::string committed) {
-    const std::string typed = utf8(typed_);
+    const std::string typed = utf8(typed_), letters = asciiApostrophes(typed);
     // With autocorrect off, and for words typed right after a "." or a digit (".py", "3rd", #39), the
     // word stays as typed.
     const char before = context_.empty() ? ' ' : context_.back();
     if (!autocorrect_ || resumed_ || before == '.' || before == '/' || before == ':' ||
         std::isdigit(static_cast<unsigned char>(before)))
-      committed = typed;
-    const bool curly = std::ranges::find(typed_, int(U'’')) != typed_.end();
-    for (auto &w : strip) w = withCase(curly ? curlyApostrophes(w) : w, typed_);
-    committed = withCase(curly ? curlyApostrophes(committed) : committed, typed_);
+      committed = letters;
+    const auto spelt = [&](const std::string &w) {
+      if (w == letters) return typed;
+      const auto saved = personalSpelling_.find(w);
+      return withCase(saved != personalSpelling_.end() ? saved->second : typed != letters ? curlyApostrophes(w) : w,
+                      typed_);
+    };
+    for (auto &w : strip) w = spelt(w);
+    committed = spelt(committed);
     // The typed word is always there to pick (and learn), after the correction when there is one.
     strip_.clear();
     correction_ = committed != typed;
@@ -1069,7 +1080,7 @@ class English : public Engine {
   void showRanking(const sebtype_lm::Ranked &ranked) {
     auto strip = shortcuts_;
     strip.insert(strip.end(), ranked.strip.begin(), ranked.strip.end());
-    show(strip, shortcuts_.empty() ? ranked.committed : utf8(typed_));
+    show(strip, shortcuts_.empty() ? ranked.committed : asciiApostrophes(utf8(typed_)));
     modelStrip_ = true;
   }
 
@@ -1178,7 +1189,7 @@ class English : public Engine {
     edit_.composeAfter = int(tail);
     typed_ = word;
     for (int c : word) {
-      const auto [x, y] = keyCentre(lowerCase(c == U'’' ? '\'' : c));
+      const auto [x, y] = keyCentre(lowerCase(asciiApostrophe(c)));
       xs_.push_back(x), ys_.push_back(y);
     }
     tail_ = tail;
@@ -1328,6 +1339,7 @@ class English : public Engine {
   std::function<void()> ready_;
   std::unique_ptr<Lexicon> main_, history_, personal_;
   std::vector<PersonalWord> personalWords_;
+  std::map<std::string, std::string> personalSpelling_;  // a personal word's saved spelling by its lookup one
   Layout layout_;
   std::unique_ptr<latinime::ProximityInfo> keys_;
   Field field_ = Field::Text;

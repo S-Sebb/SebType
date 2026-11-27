@@ -711,7 +711,7 @@ TEST_F(EnglishTest, ACurlyApostropheIsReadAsAsciisAndKept) {
     return std::tuple{shown, preedit, en->takeCommit()};
   };
   for (const auto &[context, typed] : std::vector<std::array<std::string, 2>>{
-           {"I ", "don't"}, {"", "I've"}, {"I think ", "it's"}, {"I ", "dpn't"}, {"I don’t think ", "it's"}}) {
+           {"I ", "don't"}, {"", "I've"}, {"I think ", "it's"}, {"I ", "dpn't"}}) {
     const auto [ascii, asciiPreedit, asciiCommit] = typing(context, typed);
     const auto [shown, preedit, commit] = typing(context, curly(typed));
     std::vector<std::string> expected;
@@ -720,12 +720,23 @@ TEST_F(EnglishTest, ACurlyApostropheIsReadAsAsciisAndKept) {
     EXPECT_EQ(preedit, curly(typed));
     EXPECT_EQ(commit, curly(asciiCommit)) << context << typed;
   }
-  // Fcitx's ’ on Linux is X11's rightsinglequotemark keysym, not the Unicode one.
-  en->setContext("I ");
-  type("dpn");
-  en->key({0xad1, 0, false});
-  type("t ");
-  EXPECT_EQ(en->takeCommit(), "don’t ");
+  // A word before the letters reads the same with either apostrophe: the model reads text with ASCII's.
+  EXPECT_EQ(typing("I don’t think ", "it’s"), typing("I don't think ", "it’s"));
+  // Personal words and shortcuts with either apostrophe are found by letters typed with the other, show as
+  // saved, and keep a word typed as saved from being corrected; a word typed with both keeps both.
+  Settings s;
+  s.englishWords = {{"rock’n’roll", 250, ""}, {"dpn’t", 250, ""}, {"I'm testing this", 250, "im’t"}};
+  en->applySettings(s, true);
+  for (const auto &[context, typed, offered] : std::vector<std::array<std::string, 3>>{
+           {"I like ", "rock'n'ro", "rock’n’roll"}, {"I like ", "rock’n’ro", "rock’n’roll"},
+           {"so ", "im’t", "I'm testing this"}}) {
+    const auto [shown, preedit, commit] = typing(context, typed);
+    EXPECT_NE(std::ranges::find(shown, offered), shown.end()) << typed << " " << testing::PrintToString(shown);
+  }
+  EXPECT_EQ(std::get<2>(typing("I ", "dpn’t")), "dpn’t ");
+  s.autocorrect = false;
+  en->applySettings(s, true);
+  EXPECT_EQ(std::get<2>(typing("so ", "y'all’d")), "y'all’d ");
 }
 
 // A letter shows the decoder's strip at once and the model ranks it on the worker (#310); a space typed
@@ -1189,11 +1200,11 @@ TEST_F(EnglishTest, BackspaceRightAfterACorrectionPutsBackWhatWasTyped) {
     en->key({0xff08, 0, false});
     ASSERT_EQ(en->takeEdit().deleteBefore, 4);
   };
-  // Only ASCII's apostrophe joins the word: a curly one gets the space ("teh ’").
+  // A curly apostrophe joins the word as ASCII's does (#583).
   revertAfter("");
   en->key({0x1000000 + U'’', 0, false});
-  EXPECT_EQ(en->takeCommit(), "teh ");
-  EXPECT_EQ(en->preedit().text(), "’");
+  EXPECT_EQ(en->takeCommit(), "");
+  EXPECT_EQ(en->preedit().text(), "teh’");
   // A double quote right before a letter of any script closes a quote, as Java's Character.isLetter has it
   // ("Ж\"teh"): the next one opens another, after the space.
   revertAfter("Ж\"");
