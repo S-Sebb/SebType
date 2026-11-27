@@ -317,6 +317,7 @@ at most 1.25 times its own. The dev sets chose every change; the test sets were 
 | r7a | up to 8 passes | 80.4 | no further gain; partial-news first 2.5 below r2 |
 | r7b | half the empty-field examples with a typo | 78.6 | worse |
 | r8 | r6's mix on 8B tokens (6 packs) instead of 4B | 79.8 | news up (abbr-news 47.0 → 53.5, long-news 33 → 40); slips as r6 |
+| r9 | r8 with Chinese Wiktionary's headwords and examples (0.9M characters, its 4 passes under 1 %) | 81.0 | mean first 60.7 against r8's 62.8, news 3–5 lower, 大指挥家 off the first page; it has 莫名其妙 3 times, 淋浴头 never |
 
 The next-word latency that seemed to rise was the machine's load: the same r2 measured 13.2 and 16.9 ms p95
 in two runs, r3 20.4 and then 14.3. So the bar now measures the reference beside the candidate.
@@ -345,13 +346,30 @@ sources are too small to read more often (r7a).
 
 **The owner's reported clauses** (`reported.tsv`, in sent-chat; the bar wants each first, #612): `chidesha` →
 吃的啥 is first on r2, r6 and r8. `linyutou` → 淋浴头 after 洗澡 is first on r6 and r8 (third on r2). Typed alone,
-r8 puts 林宇滔 first, a name from Wikipedia: phrase-level correction (#478) offers it for lin yu tao, and its
-plain-text log probability (−14.4, against −23.2 for 淋浴头) carries it over Rime's first. Leaving out the plain
-re-rank when nothing is before the cursor fixes it but costs 4.2 points of dev slips.
+r8 put 林宇滔 first, a Macau legislator Wikipedia names 88 times (淋浴头: 5): the model's own beam guess, read as
+2 edits from the letters (tao with its a left out and a u added), whose plain-text log probability (−14.4,
+against −23.2) carried it past Rime's first. Neither edit is a slip: u is two keys from o, and the typos the
+model learns (common.py's, #46's phone data) are neighbouring keys or a key doubled. So `Readings::edits` now
+counts a letter typed for another, or in excess, as 1 only on a neighbouring key and else 2, and 林宇滔 is 3
+edits away and dropped. On the dev sets no set lost a first or a top 3 (variants +1.7, the fuzzy and long chat
+sets +1), and on the test sets every reported row passes. r9 (Wiktionary) put 淋浴头 first too, before this
+fix, but by its other scores, not by knowing the word.
 
-**Where it stands.** No candidate passes every row: the slips and the alone 淋浴头 want the everyday phrases and
-idioms LCCC gave r2, which none of the cleared sources holds in number. The next lever is a source of them
-under an open licence, which is the owner's to choose (#557).
+**r8 with that fix on the test sets** (both runs equal): every row passes, latency included (key p95 124.3 ms
+beside the reference's 125.8), but three:
+
+| Row | r8 | bar |
+|---|---|---|
+| slips first | 83.4 | 85.6 |
+| slips top 3 | 87.0 | 89.2 |
+| abbr-news top 3 | 60.5 | 61.5 |
+
+A later correction (Rime's offered when the model trails it by up to 1 or 1.5 rather than 0.5) gains no dev
+slips. One core test still fails with r8 (`RimesSplitWordOutranksTheModelsMisreading`, #502): it scores
+Rime's 健个身 after 我再去 at −10.4 for `jiangeshen` (r2: −4.5), below its own 见个生 and 讲个声.
+
+**Where it stands.** No candidate passes every row: the slips want the everyday idioms and 一X就Y phrases LCCC
+gave r2, which none of the cleared sources holds in number, Wiktionary included (#557).
 
 ## Recommendation
 

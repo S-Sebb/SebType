@@ -19,7 +19,10 @@ LCCC (r2's chat source) is gone since #557: its authors' terms are research-only
 personal-data filtering. The shipped model is r8, trained without it (#557,
 docs/experiments/2026-11-16-chinese-lm.md). CrossWOZ (templates), Common Voice's
 sentences (too few), Johnson8187's dialogues (film subtitles under an MIT tag) and NaturalConv (no clear
-licence) were looked at and left out (#557).
+licence) were looked at and left out (#557). Chinese Wiktionary (CC BY-SA 4.0: its headwords of 2 to 8
+characters read in Mandarin and their example sentences, 0.9M characters) was trained in (r9) and left out
+again: r8 with it scored 2 points lower on the dev sets' mean first, most on the news sets, and gained only 1.2
+on the slips.
 
 Each chat source was kept for what it adds to the chat dev sets: a pilot (1B tokens) without it against one
 with every source, two seeds of which differ by up to 4 points on a set. Without the meetings the chat sets
