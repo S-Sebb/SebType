@@ -489,7 +489,7 @@ class English : public Engine {
       return true;
     }
     if (isLetter(c) || (asciiApostrophe(c) == '\'' && !typed_.empty())) {
-      if (phantom && asciiApostrophe(c) != '\'') {  // today's app's only word connector is the apostrophe
+      if (phantom && asciiApostrophe(c) != '\'') {  // either apostrophe is the only word connector
         if (!typed_.empty()) commitWord(utf8(typed_), false);
         commit_ += " ";
         context_ += " ";
@@ -1031,10 +1031,9 @@ class English : public Engine {
       committed = letters;
     const auto spelt = [&](const std::string &w) {
       if (w == letters) return typed;
-      auto saved = shortcutSpelling_.find(w);
-      if (saved == shortcutSpelling_.end()) saved = personalSpelling_.find(w);
-      if (saved == personalSpelling_.end()) return withCase(typed != letters ? curlyApostrophes(w) : w, typed_);
-      return withCase(saved->second, typed_);
+      for (const auto *spellings : {&shortcutSpelling_, &personalSpelling_})
+        if (const auto saved = spellings->find(w); saved != spellings->end()) return withCase(saved->second, typed_);
+      return withCase(typed != letters ? curlyApostrophes(w) : w, typed_);
     };
     for (auto &w : strip) w = spelt(w);
     committed = spelt(committed);
