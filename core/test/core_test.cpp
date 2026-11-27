@@ -1593,9 +1593,9 @@ struct ChineseTest : testing::Test {
     return readies;
   }
   // Waits for the READY call after AFTER, up to a minute (the model loads first).
-  bool ready(int after) {
+  bool ready(int after, std::chrono::milliseconds wait = std::chrono::minutes(1)) {
     std::unique_lock l(mutex);
-    return cv.wait_for(l, std::chrono::minutes(1), [&] { return readies > after; });
+    return cv.wait_for(l, wait, [&] { return readies > after; });
   }
   void type(const std::string &s) {
     for (char c : s) zh->key({static_cast<uint32_t>(c), 0, false});
@@ -1898,6 +1898,36 @@ TEST_F(ChineseFixTest, ACorrectionWithBothConfusionsInOneSyllableStays) {
   list();  // the turn: the corrections looked up
   ASSERT_TRUE(ready(asked));
   EXPECT_EQ(list().at(0), "我在深圳火车站");
+}
+
+// A typo is a slip of a finger (#612): a letter for another, or an extra one, costs 1 only on a neighbouring
+// key. linyutou is 3 edits from 林宇滔 (tao: the a left out, a u two keys from o), more than kTypos, so that
+// correction is dropped. xinbuzauyam, u beside i and m beside n, is two from 心不在焉, which goes first.
+TEST_F(ChineseFixTest, ACorrectionIsASlipOfNeighbouringKeys) {
+  for (const std::string in : {"linyutou", "xinbuzauyam"}) {
+    start({}, [](FakeRime &r) {
+      // Every character has its reading: one without would match any letters.
+      r.words.insert({{"lin", {"林"}}, {"yu", {"宇"}}, {"tao", {"滔"}}, {"xin", {"心"}}, {"bu", {"不"}},
+                      {"zai", {"在"}}, {"yan", {"焉"}}});
+      r.full["linyutou"] = "淋浴头", r.spelled["linyutou"] = "lin yu tou", r.fixes["linyutou"] = {"林宇滔"};
+      r.full["xinbuzauyam"] = "新不早压", r.spelled["xinbuzauyam"] = "xin bu zao ya m";
+      r.fixes["xinbuzauyam"] = {"心不在焉"};
+    });
+    const int before = readyCount();
+    type(in);
+    ASSERT_TRUE(ready(before + 1));
+    list();  // the model's list
+    const int asked = readyCount();
+    list();  // the turn: the corrections looked up
+    const bool moved = ready(asked, std::chrono::seconds(2));
+    const auto l = list();
+    if (in == "linyutou") {
+      EXPECT_FALSE(moved);
+      EXPECT_EQ(std::ranges::find(l, "林宇滔"), l.end()) << testing::PrintToString(l);
+    } else {
+      EXPECT_EQ(l.at(0), "心不在焉") << testing::PrintToString(l);
+    }
+  }
 }
 
 // A learned first stays ahead of a correction the model is surer of (#510: 我们 for wm over 我没, picked before).

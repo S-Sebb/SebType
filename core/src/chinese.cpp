@@ -47,12 +47,12 @@
 #include <opencc.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -151,18 +151,24 @@ std::vector<std::string> syllableList(const std::string &preedit) {
 }
 
 // Whether keys A and B are the same or neighbours on the phone's QWERTY (english.cpp's defaultLayout: rows
-// indented by half a key and 1.5 keys, 160 px high for 108 px wide), diagonals included.
+// indented by half a key and 1.5 keys, 160 px high for 108 px wide). Diagonals count: 1.56 keys apart between
+// the top and middle rows, 1.79 between the middle and bottom ones (z beside a, at a corner), under 1.8; the
+// next keys over are 2 or more away.
 bool nearKey(char a, char b) {
-  static const char *rows[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
-  static constexpr float indent[] = {0, 0.5f, 1.5f};
-  const auto at = [](char c) -> std::optional<std::pair<float, float>> {
+  static const auto near = [] {
+    static const char *rows[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
+    constexpr float indent[] = {0, 0.5f, 1.5f};
+    std::array<std::pair<float, float>, 26> at{};
     for (int r = 0; r < 3; r++)
-      if (const char *k = std::strchr(rows[r], c); k && c) return std::pair{indent[r] + float(k - rows[r]), r * 160.f / 108};
-    return std::nullopt;
-  };
-  const auto pa = at(a), pb = at(b);
-  if (!pa || !pb) return a == b;
-  return std::hypot(pa->first - pb->first, pa->second - pb->second) < 1.8f;  // a diagonal is 1.56 keys away
+      for (int i = 0; rows[r][i]; i++) at[rows[r][i] - 'a'] = {indent[r] + float(i), r * 160.f / 108};
+    std::array<std::array<bool, 26>, 26> out{};
+    for (int i = 0; i < 26; i++)
+      for (int j = 0; j < 26; j++)
+        out[i][j] = std::hypot(at[i].first - at[j].first, at[i].second - at[j].second) < 1.8f;
+    return out;
+  }();
+  const auto letter = [](char c) { return c >= 'a' && c <= 'z'; };
+  return letter(a) && letter(b) ? near[a - 'a'][b - 'a'] : a == b;
 }
 
 // Each Han character's pinyin readings, from rime-data's sebtype_readings.txt ("字<TAB>reading" lines), and
@@ -206,9 +212,8 @@ struct Readings {
   // one missing, or two swapped in a syllable cost 1, but a letter typed otherwise or in excess right after
   // another costs 2, as does one that isn't a neighbouring key's: tou is no slip for tao (林宇滔 for linyutou,
   // #612). So a syllable left out (bu) costs at least 3 where its letters are together, also where a reading
-  // takes one of its letters (dai for 大 in dadafa), but can cost 2 where a good letter parts them (gnfeng for
-  // 能: g and f), and two typos side by side at least 3. A character without readings spells any 1-6 letters.
-  // Above kTypos it stops, at kTypos + 1.
+  // takes one of its letters (dai for 大 in dadafa), and two typos side by side at least 3. A character without
+  // readings spells any 1-6 letters. Above kTypos it stops, at kTypos + 1.
   int edits(const std::string &text, const std::string &typed) const {
     const size_t n = typed.size();
     // A letter typed for, or beside, another (to double it) costs 1 only next to it on the keyboard, where a
