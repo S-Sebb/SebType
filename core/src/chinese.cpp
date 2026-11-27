@@ -47,6 +47,7 @@
 #include <opencc.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -149,6 +150,27 @@ std::vector<std::string> syllableList(const std::string &preedit) {
   return out;
 }
 
+// Whether keys A and B are the same or neighbours on the phone's QWERTY (english.cpp's defaultLayout: rows
+// indented by half a key and 1.5 keys, 160 px high for 108 px wide). Diagonals count: 1.56 keys apart between
+// the top and middle rows, 1.79 between the middle and bottom ones (z beside a, at a corner), under 1.8; the
+// next keys over are 2 or more away.
+bool nearKey(char a, char b) {
+  static const auto near = [] {
+    static const char *rows[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
+    constexpr float indent[] = {0, 0.5f, 1.5f};
+    std::array<std::pair<float, float>, 26> at{};
+    for (int r = 0; r < 3; r++)
+      for (int i = 0; rows[r][i]; i++) at[rows[r][i] - 'a'] = {indent[r] + float(i), r * 160.f / 108};
+    std::array<std::array<bool, 26>, 26> out{};
+    for (int i = 0; i < 26; i++)
+      for (int j = 0; j < 26; j++)
+        out[i][j] = std::hypot(at[i].first - at[j].first, at[i].second - at[j].second) < 1.8f;
+    return out;
+  }();
+  const auto letter = [](char c) { return c >= 'a' && c <= 'z'; };
+  return letter(a) && letter(b) ? near[a - 'a'][b - 'a'] : a == b;
+}
+
 // Each Han character's pinyin readings, from rime-data's sebtype_readings.txt ("字<TAB>reading" lines), and
 // every syllable among them.
 struct Readings {
@@ -184,16 +206,22 @@ struct Readings {
     return true;
   }
 
-  // The fewest edits from the letters TYPED to what TEXT's characters spell, each by one of its readings, that
-  // reading confused as fuzzy pinyin's users type it throughout (zh as z, ng as n, either way, and both in one
-  // syllable), or its first letters (zd for 知道, ranh for 然后): a letter typed otherwise or in excess, one
-  // missing, or two swapped in a syllable cost 1, but a letter typed otherwise or in excess right after another
-  // costs 2. So a syllable left out (bu) costs 3 where its letters are together, also where a reading takes one
-  // of its letters (dai for 大 in dadafa), but 2 where a good letter parts them (gnfeng for 能: g and f), and
-  // two typos side by side cost 3. A character without readings spells any 1-6 letters. Above kTypos it stops,
-  // at kTypos + 1.
+  // The fewest edits from the letters TYPED to what TEXT's characters spell, each by one of its readings,
+  // that reading confused as fuzzy pinyin's users type it throughout (zh as z, ng as n, either way, and both
+  // in one syllable), or its first letters (zd for 知道, ranh for 然后): a letter typed otherwise or in excess,
+  // one missing, or two swapped in a syllable cost 1, but a letter typed otherwise or in excess right after
+  // another costs 2, as does one that isn't a neighbouring key's: tou is no slip for tao (林宇滔 for linyutou,
+  // #612). So a syllable left out (bu) costs at least 3 where its letters are together, also where a reading
+  // takes one of its letters (dai for 大 in dadafa), and two typos side by side at least 3. A character without
+  // readings spells any 1-6 letters. Above kTypos it stops, at kTypos + 1.
   int edits(const std::string &text, const std::string &typed) const {
     const size_t n = typed.size();
+    // A letter typed for, or beside, another (to double it) costs 1 only next to it on the keyboard, where a
+    // finger slips (common.py's typos, #46's phone data).
+    const auto slip = [&](char aimed, size_t j) { return nearKey(aimed, typed[j - 1]) ? 1 : 2; };
+    const auto extra = [&](size_t j) {
+      return std::min(j >= 2 ? slip(typed[j - 2], j) : 2, j < n ? slip(typed[j], j) : 2);
+    };
     // For each prefix of TYPED, the fewest edits to it from the letters spelled so far, its last letter typed
     // as spelled (in) or otherwise or in excess (off).
     struct Row {
@@ -201,9 +229,9 @@ struct Readings {
     };
     const auto blank = [&] { return Row{std::vector<int>(n + 1, 1 << 20), std::vector<int>(n + 1, 1 << 20)}; };
     const auto least = [](const Row &r, size_t j) { return std::min(r.in[j], r.off[j]); };
-    const auto off = [](const Row &r, size_t j) { return std::min(r.in[j] + 1, r.off[j] + 2); };  // one more off
+    const auto off = [](const Row &r, size_t j, int c = 1) { return std::min(r.in[j] + c, r.off[j] + 2); };  // one more off
     const auto excess = [&](Row &r) {
-      for (size_t j = 1; j <= n; j++) r.off[j] = std::min(r.off[j], off(r, j - 1));
+      for (size_t j = 1; j <= n; j++) r.off[j] = std::min(r.off[j], off(r, j - 1, extra(j)));
     };
     Row at = blank();
     at.in[0] = 0;
@@ -224,7 +252,7 @@ struct Readings {
             for (size_t j = 0; j <= n; j++) {
               row.in[j] = prev.in[j] + 1, row.off[j] = prev.off[j] + 1;  // r[m] missing
               if (j && r[m] == typed[j - 1]) row.in[j] = std::min(row.in[j], least(prev, j - 1));
-              if (j && r[m] != typed[j - 1]) row.off[j] = std::min(row.off[j], off(prev, j - 1));
+              if (j && r[m] != typed[j - 1]) row.off[j] = std::min(row.off[j], off(prev, j - 1, slip(r[m], j)));
               if (m && j >= 2 && r[m] == typed[j - 2] && r[m - 1] == typed[j - 1])
                 row.in[j] = std::min(row.in[j], least(rows[m - 1], j - 2) + 1);
             }
