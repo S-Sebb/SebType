@@ -31,10 +31,6 @@ hf hundredcv-chat Jax-dan/HundredCV-Chat cece0fa1b87a8c3fdb08a7c45852863fea7ddfa
 [[ -s zhwikinews-20261101.xml.bz2 ]] ||
   { curl --limit-rate 35M -sfo zhwikinews.part https://dumps.wikimedia.org/zhwikinews/20261101/zhwikinews-20261101-pages-articles.xml.bz2 &&
     mv zhwikinews.part zhwikinews-20261101.xml.bz2; }
-wiktionary=wiktionary/zhwiktionary-20261101-pages-articles.xml.bz2
-[[ -s $wiktionary ]] ||
-  { mkdir -p wiktionary && curl --limit-rate 35M -sfo wiktionary/part https://dumps.wikimedia.org/zhwiktionary/20261101/${wiktionary#*/} &&
-    echo "bd139bae2c7c9f5fad6d6a347d07296bf9bcabdc  wiktionary/part" | sha1sum -c --quiet && mv wiktionary/part $wiktionary; }
 kdconv=https://raw.githubusercontent.com/thu-coai/KdConv/653db76432de09a004ba708a68f8bbd5500e6bec/data
 for d in film music travel; do
   for s in train dev test; do
