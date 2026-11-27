@@ -488,7 +488,7 @@ class English : public Engine {
       typedChanged();
       return true;
     }
-    if (isLetter(c) || ((c == '\'' || c == U'’') && !typed_.empty())) {
+    if (isLetter(c) || (asciiApostrophe(c) == '\'' && !typed_.empty())) {
       if (phantom && asciiApostrophe(c) != '\'') {  // today's app's only word connector is the apostrophe
         if (!typed_.empty()) commitWord(utf8(typed_), false);
         commit_ += " ";
@@ -680,6 +680,7 @@ class English : public Engine {
   // The personal dictionary's words as AOSP's user dictionary holds them: a dictionary of their own, made
   // again whenever they change (they come from the platform, which keeps them).
   void openPersonal() {
+    personalSpelling_.clear();
     personal_.reset();
     if (paths_.userDir.empty()) return;
     const std::string path = paths_.userDir + "/en_personal";
@@ -709,11 +710,10 @@ class English : public Engine {
     std::map<std::vector<int>, Entry> entries;
     auto valid = [](const std::vector<int> &cps) { return !cps.empty() && cps.size() < size_t(kMaxWordLength); };
     // Their spellings are looked up as typed letters are, with ASCII's apostrophe, and shown as saved (#583).
-    personalSpelling_.clear();
     for (const PersonalWord &w : personalWords_) {
       const auto cps = asciiApostrophes(codePoints(w.word));
-      personalSpelling_.emplace(utf8(cps), w.word);
       if (!valid(cps)) continue;
+      personalSpelling_.emplace(utf8(cps), w.word);
       const int probability = std::clamp(w.frequency * kPersonalProbability / kHandAddedFrequency, 1, 255);
       Entry &word = entries[cps];
       word.word = true;
@@ -859,7 +859,7 @@ class English : public Engine {
           if (known(w.word)) words.push_back(w.word);
     }
     if (words.empty() && history_) {
-      const auto context = ngramContext(context_);
+      const auto context = ngramContext(asciiApostrophes(context_));
       std::vector<Word> results;
       for (const Word &w : main_->predict(context)) addResult(results, w, kMaxResults);
       for (const Word &w : history_->predict(context)) addResult(results, w, kMaxResults);
@@ -899,7 +899,7 @@ class English : public Engine {
       return;
     }
     if (!main_) return;
-    const auto context = ngramContext(context_);
+    const auto context = ngramContext(asciiApostrophes(context_));
     std::vector<std::string> userWords;  // the user's words for the letters in either case, before the merge
     const auto suggest = [&](const std::vector<int> &letters) {
       std::vector<Word> out;
@@ -914,6 +914,30 @@ class English : public Engine {
     };
     const std::vector<Word> results = suggest(letters);
 
+    // A personal word's shortcut offers it first, as the FUTO-based app did (#380): the model would rank a
+    // phrase it doesn't know last. That app put first the words of the shortcut typed, in any case, and a
+    // shortcut's word the decoder ranks first, as for letters near one ("qvx" for "qvz"), and then a space
+    // corrected nothing, as by AOSP's rule below. Those words stay out of the ranking, whichever dictionary
+    // offers them; other shortcuts' words the model ranks like any other ("because" for "becaus" still
+    // corrects with a shortcut "becuase").
+    const auto lower = [](std::vector<int> cps) {
+      for (int &c : cps) c = int(lowerCase(c));
+      return cps;
+    };
+    const auto typedLower = lower(letters);
+    shortcuts_.clear(), shortcutSpelling_.clear();
+    const auto add = [&](const std::string &word) {
+      if (std::find(shortcuts_.begin(), shortcuts_.end(), word) == shortcuts_.end()) shortcuts_.push_back(word);
+    };
+    // A shortcut's word shows as saved with it, though another word of the same letters is saved otherwise
+    // (rock'n'roll and rock’n’roll, #583).
+    for (const PersonalWord &w : personalWords_)
+      if (lower(asciiApostrophes(codePoints(w.shortcut))) == typedLower) {
+        add(asciiApostrophes(w.word));
+        shortcutSpelling_.emplace(asciiApostrophes(w.word), w.word);
+      }
+    if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
+      add(results.front().word);
     // AOSP's rule: the typed word leaves the list, and whether it was there decides if it may be corrected.
     std::string committed = typed;
     std::vector<std::string> strip;
@@ -936,25 +960,6 @@ class English : public Engine {
     // batch and its decoding failed (#568).
     if (!model_ready_ || letters.empty() || letters.size() >= size_t(kMaxWordLength)) return;
     // The model's ranking comes from the worker; a key never waits for it.
-    // A personal word's shortcut offers it first, as the FUTO-based app did (#380): the model would rank a
-    // phrase it doesn't know last. That app put first the words of the shortcut typed, in any case, and a
-    // shortcut's word the decoder ranks first, as for letters near one ("qvx" for "qvz"), and then a space
-    // corrected nothing, as by AOSP's rule above. Those words stay out of the ranking, whichever dictionary
-    // offers them; other shortcuts' words the model ranks like any other ("because" for "becaus" still
-    // corrects with a shortcut "becuase").
-    const auto lower = [](std::vector<int> cps) {
-      for (int &c : cps) c = int(lowerCase(c));
-      return cps;
-    };
-    const auto typedLower = lower(letters);
-    shortcuts_.clear();
-    const auto add = [&](const std::string &word) {
-      if (std::find(shortcuts_.begin(), shortcuts_.end(), word) == shortcuts_.end()) shortcuts_.push_back(word);
-    };
-    for (const PersonalWord &w : personalWords_)
-      if (lower(asciiApostrophes(codePoints(w.shortcut))) == typedLower) add(asciiApostrophes(w.word));
-    if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
-      add(results.front().word);
     // The model ranks a word typed with capitals (Were where a sentence starts, ILL) from the decoder's words
     // for it in lower case, as the dictionary has them and as its shortcuts are found (cant: can't), and the
     // dictionary's word of those letters is the typed word; a space commits a word in the capitals typed (#568).
@@ -1026,9 +1031,10 @@ class English : public Engine {
       committed = letters;
     const auto spelt = [&](const std::string &w) {
       if (w == letters) return typed;
-      const auto saved = personalSpelling_.find(w);
-      return withCase(saved != personalSpelling_.end() ? saved->second : typed != letters ? curlyApostrophes(w) : w,
-                      typed_);
+      auto saved = shortcutSpelling_.find(w);
+      if (saved == shortcutSpelling_.end()) saved = personalSpelling_.find(w);
+      if (saved == personalSpelling_.end()) return withCase(typed != letters ? curlyApostrophes(w) : w, typed_);
+      return withCase(saved->second, typed_);
     };
     for (auto &w : strip) w = spelt(w);
     committed = spelt(committed);
@@ -1134,7 +1140,7 @@ class English : public Engine {
     const bool known = main_->has(word) || history_->has(word) || (personal_ && personal_->has(word));
     if (sentenceStart && (main_->has(lowerCaseWord(word)) || !known)) learned = lowerCaseWord(word);
     const auto cps = codePoints(learned);
-    const auto context = ngramContext(context_);
+    const auto context = ngramContext(asciiApostrophes(context_));
     history_->dict->updateEntriesForWordWithNgramContext(&context, latinime::CodePointArrayView(cps), known || picked,
                                                          latinime::HistoricalInfo(int(std::time(nullptr)), 0, 1));
     return learned;
@@ -1167,7 +1173,7 @@ class English : public Engine {
   bool reopen(int deleted) {
     if (field_ != Field::Text || !main_) return false;
     // The letters (and apostrophes inside them) before the cursor and after it
-    auto isPart = [](char32_t c) { return isLetter(c) || c == '\'' || c == U'’'; };
+    auto isPart = [](char32_t c) { return isLetter(c) || asciiApostrophe(c) == '\''; };
     const auto before = codePoints(context_.substr(context_.size() - std::min(context_.size(), size_t(4 * kMaxWordLength))));
     auto start = before.end();
     while (start != before.begin() && isPart(start[-1])) --start;
@@ -1351,6 +1357,7 @@ class English : public Engine {
   std::string context_;               // the text before them
   std::vector<std::string> strip_;
   std::vector<std::string> shortcuts_;  // the personal words the letters typed are a shortcut for
+  std::map<std::string, std::string> shortcutSpelling_;  // their words as saved, by their lookup spellings
   bool correction_ = false;  // strip_[0] is what a space commits instead of the typed word
   bool modelStrip_ = false;  // strip_ is the model's ranking, not the decoder's rule
   bool domains_ = false;     // the list is e-mail domains

@@ -686,8 +686,8 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
   }
 }
 
-// A word typed with a curly apostrophe (iOS's, some PC layouts', pasted text's) keeps it, and is looked up and
-// ranked as with ASCII's: "I don’t" committed "dont" (#583).
+// A word typed with a curly apostrophe (other keyboards', pasted text's) keeps it, and is looked up and ranked as
+// with ASCII's: "I dpn’t" was corrected to ASCII's "don't", and don’t, I’ve and it’s got other lists (#583).
 TEST_F(EnglishTest, ACurlyApostropheIsReadAsAsciisAndKept) {
   type("a");
   en->key({0xff08, 0, false});
@@ -722,6 +722,24 @@ TEST_F(EnglishTest, ACurlyApostropheIsReadAsAsciisAndKept) {
   }
   // A word before the letters reads the same with either apostrophe: the model reads text with ASCII's.
   EXPECT_EQ(typing("I don’t think ", "it’s"), typing("I don't think ", "it’s"));
+  // A word the text has with one, opened again (as the phone's keys have only ASCII's, mostly how it comes),
+  // keeps it, with the list of ASCII's.
+  const auto reopened = [&](const std::string &context) {
+    const int ranked = readyCount();
+    en->setContext(context);
+    EXPECT_TRUE(ready(ranked));
+    auto shown = list();
+    type(" ");
+    en->takeEdit();
+    return std::pair{shown, en->takeCommit()};
+  };
+  const auto [asciiShown, asciiCommit] = reopened("I don't");
+  const auto [curlyShown, curlyCommit] = reopened("I don’t");
+  std::vector<std::string> curlied;
+  for (const auto &w : asciiShown) curlied.push_back(curly(w));
+  EXPECT_EQ(curlyShown, curlied);
+  EXPECT_EQ(curlyCommit, "don’t ");
+  EXPECT_EQ(curlyCommit, curly(asciiCommit));
   // Personal words and shortcuts with either apostrophe are found by letters typed with the other, show as
   // saved, and keep a word typed as saved from being corrected; a word typed with both keeps both.
   Settings s;
@@ -737,6 +755,22 @@ TEST_F(EnglishTest, ACurlyApostropheIsReadAsAsciisAndKept) {
   s.autocorrect = false;
   en->applySettings(s, true);
   EXPECT_EQ(std::get<2>(typing("so ", "y'all’d")), "y'all’d ");
+  // Shortcuts to words of the same letters saved with either apostrophe offer each as saved with it.
+  s.autocorrect = true;
+  s.englishWords = {{"rock'n'roll", 250, "rnr"}, {"rock’n’roll", 250, "rnrc"}};
+  en->applySettings(s, true);
+  for (const auto &[typed, offered, other] : std::vector<std::array<std::string, 3>>{
+           {"rnr", "rock'n'roll", "rock’n’roll"}, {"rnrc", "rock’n’roll", "rock'n'roll"}}) {
+    const auto [shown, preedit, commit] = typing("I like ", typed);
+    EXPECT_NE(std::ranges::find(shown, offered), shown.end()) << typed << " " << testing::PrintToString(shown);
+    EXPECT_EQ(std::ranges::find(shown, other), shown.end()) << typed << " " << testing::PrintToString(shown);
+  }
+  // Once the personal words are gone, none keeps its spelling.
+  s.englishWords = {{"don’t", 250, ""}};
+  en->applySettings(s, true);
+  s.englishWords = {};
+  en->applySettings(s, true);
+  EXPECT_EQ(std::get<2>(typing("Please ", "dont")), "don't ");
 }
 
 // A letter shows the decoder's strip at once and the model ranks it on the worker (#310); a space typed
@@ -1042,6 +1076,31 @@ TEST_F(EnglishTest, PickedWordsAreLearnedKeptAndForgotten) {
   en->forget();
   type("zorbl");
   EXPECT_FALSE(lists("zorbly"));
+}
+
+// Words learned after a word with a curly apostrophe follow it with ASCII's, as it is learned, also where it
+// ends the word (the kids’): read with either, it brings them first (#583).
+TEST_F(EnglishTest, WordsLearnedAfterACurlyApostropheFollowItWithEither) {
+  start("");  // learning is the decoder's
+  const auto keys = [&](const std::string &t) {
+    for (size_t i = 0; i < t.size(); i++) {
+      if (t.compare(i, 3, "’") == 0) en->key({0x1000000 + U'’', 0, false}), i += 2;
+      else en->key({static_cast<uint32_t>(t[i]), 0, false});
+      en->settle();
+    }
+  };
+  for (int i = 0; i < 16; i++) {  // zorblb is the more frequent word
+    en->setContext("");
+    keys("I will zorblb ");
+    if (i < 4) en->setContext(""), keys("I can’t zorbla "), en->setContext(""), keys("The kids’ zorbla ");
+  }
+  for (const std::string context : {"I can't ", "I can’t ", "The kids' ", "The kids’ ", "I saw "}) {
+    en->setContext(context);
+    keys("zorbl");
+    const auto shown = list();
+    EXPECT_EQ(shown.at(0), context == "I saw " ? "zorblb" : "zorbla") << context << testing::PrintToString(shown);
+    en->clear();
+  }
 }
 
 // #270: a private field (a private browser window on the PCs, incognito on the phone), as every frontend tells
