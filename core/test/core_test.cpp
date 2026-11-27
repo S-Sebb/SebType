@@ -1683,18 +1683,18 @@ TEST_F(ChineseTest, TheModelsFixOfATypoInALongClauseComesFirst) {
   EXPECT_EQ(l[0], "刚刚参加工作就有车的人还想怎样") << testing::PrintToString(l);
 }
 
-// Fuzzy pinyin typed throughout (#563): zesinisengri, 3 syllables short of their h, is 这是你生日 to the model.
-// Rime, without fuzzy pinyin, reads it as written (僧 for seng).
+// Fuzzy pinyin typed throughout (#563): zesiwodesu, 3 syllables short of their h, is 这是我的书 to the model.
+// Rime, without fuzzy pinyin, reads it as written (速 for su).
 TEST_F(ChineseTest, TheModelsReadingOfFuzzyPinyinComesFirst) {
-  const std::string in = "zesinisengri";
+  const std::string in = "zesiwodesu";
   start({}, [&](FakeRime &r) {
-    r.words["zhe"] = {"这"}, r.words["shi"] = {"是"}, r.words["sheng"] = {"生"}, r.words["ri"] = {"日"};
-    r.full[in] = "泽斯尼僧日", r.spelled[in] = "ze si ni seng ri";
+    r.words["zhe"] = {"这"}, r.words["shi"] = {"是"}, r.words["shu"] = {"书"};
+    r.full[in] = "则是我的速", r.spelled[in] = "ze si wo de su";
   });
   typeAndWait(in);
   const auto l = list();
   ASSERT_FALSE(l.empty());
-  EXPECT_EQ(l[0], "这是你生日") << testing::PrintToString(l);
+  EXPECT_EQ(l[0], "这是我的书") << testing::PrintToString(l);
 }
 
 // A short clause the model reads without a syllable (#563): 我的圣诞快乐 leaves bu out, and Rime's 不 stays.
@@ -1834,8 +1834,8 @@ TEST_F(ChineseTest, ATapWhileTheListIsKeptPicksTheWordShown) {
 
 // Typos that read as valid pinyin (#478). The model's list shows first, untouched; on the turn its second
 // READY asks for, Rime's corrections are looked up, and once the model has weighed them the list changes
-// again if the correction moves. yu for yue: the model reads 越来越小 itself. za for zai: the model's own beam
-// misses 心不在焉 (心不咋样), but is surer of it than of its own first once asked, so the correction goes first.
+// again if the correction moves. yu for yue: the model reads 越来越小 itself. yu for you: the model's own beam
+// misses 又快又好 (又快遇好), but is surer of it than of its own first once asked, so the correction goes first.
 struct ChineseFixTest : ChineseTest {
   void SetUp() override { startFixing(); }
   void startFixing(std::chrono::milliseconds delay = {}) {
@@ -1844,9 +1844,9 @@ struct ChineseFixTest : ChineseTest {
                       {"kuai", {"块"}}});
       r.full["yuelaiyuxiao"] = "越来鱼小";
       r.fixes["yuelaiyuxiao"] = {"越来越小", "越来越少"};
-      r.full["xinbuzayan"] = "新不咋盐";
-      r.spelled["xinbuzayan"] = "xin bu za yan";
-      r.fixes["xinbuzayan"] = {"心不在焉", "新不在焉"};
+      r.full["youkuaiyuhao"] = "有块雨好";
+      r.spelled["youkuaiyuhao"] = "you kuai yu hao";
+      r.fixes["youkuaiyuhao"] = {"又快又好", "有快又好"};
     });
   }
 };
@@ -1862,33 +1862,32 @@ TEST_F(ChineseFixTest, TheReportedSlipReadsAsMeant) {
 
 TEST_F(ChineseFixTest, ACorrectionTheModelFavoursComesFirst) {
   const int before = readyCount();
-  type("xinbuzayan");
+  type("youkuaiyuhao");
   ASSERT_TRUE(ready(before + 1));  // the model's list, then the turn for corrections
   const auto shown = list();
   EXPECT_EQ(rime->corrected, 0);  // not while making the list that shows first
-  ASSERT_NE(shown.at(0), "心不在焉");
+  ASSERT_NE(shown.at(0), "又快又好");
   const int asked = readyCount();
   EXPECT_EQ(list(), shown);  // the turn: the same list, and the corrections looked up
   EXPECT_EQ(rime->corrected, 1);
   ASSERT_TRUE(ready(asked));
   const auto l = list();
-  EXPECT_EQ(l.at(0), "心不在焉");
+  EXPECT_EQ(l.at(0), "又快又好");
   EXPECT_NE(std::ranges::find(l, shown[0]), l.end());
   zh->key({' ', 0, false});
-  EXPECT_EQ(zh->takeCommit(), "心不在焉");
+  EXPECT_EQ(zh->takeCommit(), "又快又好");
   // Rime has no pieces that spell it: stored under the syllables typed, as the model's own are (#518)
-  EXPECT_EQ(rime->taught, (std::vector<std::string>{"xin bu za yan\t心不在焉"}));
+  EXPECT_EQ(rime->taught, (std::vector<std::string>{"you kuai yu hao\t又快又好"}));
 }
 
-// Both of fuzzy pinyin's confusions in one syllable cost nothing (#563): zang for 站, seng for 深. The model
-// doesn't read them itself, but Rime's correction stays. Every character has its reading: one without
-// would match any letters.
+// Both of fuzzy pinyin's confusions in one syllable cost nothing (#563): seng for 深. The model doesn't read
+// it itself (我在等着), but Rime's correction stays. Every character has its reading: one without would match
+// any letters.
 TEST_F(ChineseFixTest, ACorrectionWithBothConfusionsInOneSyllableStays) {
-  const std::string in = "wozaisengzenghuocezang";
+  const std::string in = "wozaisengzen";
   start({}, [&](FakeRime &r) {
-    r.words.insert({{"wo", {"我"}}, {"zai", {"在"}}, {"shen", {"深"}}, {"zhen", {"圳"}}, {"huo", {"火"}},
-                    {"che", {"车"}}, {"zhan", {"站"}}});
-    r.fixes[in] = {"我在深圳火车站"};
+    r.words.insert({{"wo", {"我"}}, {"zai", {"在"}}, {"shen", {"深"}}, {"zhen", {"圳"}}});
+    r.fixes[in] = {"我在深圳"};
   });
   const int before = readyCount();
   type(in);
@@ -1897,7 +1896,7 @@ TEST_F(ChineseFixTest, ACorrectionWithBothConfusionsInOneSyllableStays) {
   const int asked = readyCount();
   list();  // the turn: the corrections looked up
   ASSERT_TRUE(ready(asked));
-  EXPECT_EQ(list().at(0), "我在深圳火车站");
+  EXPECT_EQ(list().at(0), "我在深圳");
 }
 
 // A typo is a slip of a finger (#612): a letter for another, or an extra one, costs 1 only on a neighbouring
@@ -1932,36 +1931,36 @@ TEST_F(ChineseFixTest, ACorrectionIsASlipOfNeighbouringKeys) {
 
 // A learned first stays ahead of a correction the model is surer of (#510: 我们 for wm over 我没, picked before).
 TEST_F(ChineseFixTest, ALearnedFirstStaysAheadOfACorrection) {
-  rime->userWords = {"新不咋盐"};
+  rime->userWords = {"有块雨好"};
   const int before = readyCount();
-  type("xinbuzayan");
+  type("youkuaiyuhao");
   ASSERT_TRUE(ready(before + 1));
-  EXPECT_EQ(list().at(0), "新不咋盐");
+  EXPECT_EQ(list().at(0), "有块雨好");
   const int asked = readyCount();
   list();  // the turn: the corrections looked up
   ASSERT_EQ(rime->corrected, 1);
   ASSERT_TRUE(ready(asked));
   const auto l = list();
-  EXPECT_EQ(l.at(0), "新不咋盐");
-  EXPECT_EQ(l.at(1), "心不在焉");
+  EXPECT_EQ(l.at(0), "有块雨好");
+  EXPECT_EQ(l.at(1), "又快又好");
 }
 
 // Windows' text service asks again until the correction has been weighed too (#495), not only the model's list;
 // the PCs' hosts read the box through page(), whose next read is the turn for corrections.
 TEST_F(ChineseFixTest, UpdatingUntilTheCorrectionIsWeighed) {
-  rime->words["xin"] = {"新", "心", "信", "欣", "辛", "芯", "薪", "馨"};  // a full page, as Rime's
+  rime->words["you"] = {"有", "又", "由", "游", "友", "优", "油", "邮"};  // a full page, as Rime's
   const int before = readyCount();
-  type("xinbuzayan");
+  type("youkuaiyuhao");
   EXPECT_TRUE(zh->updating());
   ASSERT_TRUE(ready(before + 1));
-  ASSERT_NE(zh->page().items.at(0).text, "心不在焉");
+  ASSERT_NE(zh->page().items.at(0).text, "又快又好");
   EXPECT_TRUE(zh->updating());
   const int asked = readyCount();
   zh->page();  // the text service's next ask looks the corrections up
   EXPECT_EQ(rime->corrected, 1);
   EXPECT_TRUE(zh->updating());
   ASSERT_TRUE(ready(asked));
-  EXPECT_EQ(zh->page().items.at(0).text, "心不在焉");
+  EXPECT_EQ(zh->page().items.at(0).text, "又快又好");
   EXPECT_FALSE(zh->updating());
 }
 
@@ -1969,7 +1968,7 @@ TEST_F(ChineseFixTest, UpdatingUntilTheCorrectionIsWeighed) {
 TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   startFixing(300ms);
   const int before = readyCount();
-  type("xinbuzayan");
+  type("youkuaiyuhao");
   ASSERT_TRUE(ready(before + 1));
   const auto shown = list();
   list();  // corrections asked, their list 0.3 s away
@@ -1977,7 +1976,7 @@ TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   EXPECT_EQ(zh->takeCommit(), shown.at(0));
   std::this_thread::sleep_for(400ms);
   const auto after = list();
-  EXPECT_EQ(std::ranges::find(after, "心不在焉"), after.end());
+  EXPECT_EQ(std::ranges::find(after, "又快又好"), after.end());
 }
 
 TEST_F(ChineseTest, TraditionalAndNextWords) {
@@ -2196,3 +2195,4 @@ TEST_F(ChineseTest, APasswordFieldsTextNeverReachesTheModel) {
   EXPECT_NE(std::ranges::find(next, "国"), next.end());
 }
 #endif
+
